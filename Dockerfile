@@ -92,7 +92,7 @@ RUN apt-get update \
             git build-essential libopencv-dev \
       && rm -rf /var/lib/apt/lists/*
 
-COPY --chmod 777 configure-darknet.sh /tmp/
+COPY --chmod=777 configure-darknet.sh /tmp/
 
 ARG DARKNET_CONFIG
 
