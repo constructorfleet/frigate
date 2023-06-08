@@ -83,6 +83,24 @@ RUN /bin/mkdir -p '/usr/local/lib' && \
     /usr/bin/install -c -m 644 libusb-1.0.pc '/usr/local/lib/pkgconfig' && \
     ldconfig
 
+FROM nvidia/cuda:11.2.2-cudnn8-devel-ubuntu20.04 as darknet-build
+
+ENV DEBIAN_FRONTEND noninteractive
+
+RUN apt-get update \
+      && apt-get install --no-install-recommends --no-install-suggests -y gnupg2 ca-certificates \
+            git build-essential libopencv-dev \
+      && rm -rf /var/lib/apt/lists/*
+
+COPY configure-darknet.sh /tmp/
+
+ARG DARKNET_CONFIG
+
+RUN git clone https://github.com/AlexeyAB/darknet.git && cd darknet \
+      && /tmp/configure-darknet.sh $DARKNET_CONFIG && make \
+      && cp darknet /usr/local/bin \
+      && cd .. && rm -rf darknet
+
 FROM wget AS models
 
 # Get model and labels
@@ -147,7 +165,6 @@ ARG TARGETARCH
 # Add TensorRT wheels to another folder
 COPY requirements-tensorrt.txt /requirements-tensorrt.txt
 RUN mkdir -p /trt-wheels && pip3 wheel --wheel-dir=/trt-wheels -r requirements-tensorrt.txt
-
 
 # Collect deps in a single layer
 FROM scratch AS deps-rootfs
@@ -255,6 +272,8 @@ COPY --from=rootfs / /
 
 # Frigate w/ TensorRT Support as separate image
 FROM frigate AS frigate-tensorrt
+COPY --from=darknet-build /usr/local/bin/darknet /usr/local/bin/darknet
+
 RUN --mount=type=bind,from=trt-wheels,source=/trt-wheels,target=/deps/trt-wheels \
     pip3 install -U /deps/trt-wheels/*.whl && \
     ln -s libnvrtc.so.11.2 /usr/local/lib/python3.9/dist-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so && \
