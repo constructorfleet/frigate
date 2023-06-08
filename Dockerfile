@@ -99,6 +99,7 @@ ARG DARKNET_CONFIG
 RUN git clone https://github.com/AlexeyAB/darknet.git && cd darknet \
       && /tmp/configure-darknet.sh $DARKNET_CONFIG && make \
       && cp darknet /usr/local/bin \
+      && cp libdarknet.so /usr/local/lib \
       && cd .. && rm -rf darknet
 
 FROM wget AS models
