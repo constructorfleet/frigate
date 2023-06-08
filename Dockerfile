@@ -278,6 +278,7 @@ COPY --from=darknet-build /usr/local/bin/darknet /usr/local/bin/darknet
 RUN --mount=type=bind,from=trt-wheels,source=/trt-wheels,target=/deps/trt-wheels \
     pip3 install -U /deps/trt-wheels/*.whl && \
     ln -s libnvrtc.so.11.2 /usr/local/lib/python3.9/dist-packages/nvidia/cuda_nvrtc/lib/libnvrtc.so && \
+    echo 'VERSION = "0.12-darknet"' > frigate/version.py && \
     ldconfig
 
 # Dev Container w/ TRT
