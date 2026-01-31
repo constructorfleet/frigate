@@ -573,14 +573,24 @@ class CustomObjectClassificationProcessor(DeferredRealtimeProcessorApi):
         crop_bgr = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
 
         self._enqueue_task(
-            ("classify", object_id, obj_data["camera"], now, resized_crop, crop_bgr)
+            (
+                "classify",
+                object_id,
+                obj_data["camera"],
+                now,
+                resized_crop,
+                crop_bgr,
+                obj_data.get("current_zones"),
+            )
         )
 
     def _process_task(self, task: Any) -> None:
         kind = task[0]
         if kind == "classify":
-            _, object_id, camera, timestamp, resized_crop, crop_bgr = task
-            self._classify_object(object_id, camera, timestamp, resized_crop, crop_bgr)
+            _, object_id, camera, timestamp, resized_crop, crop_bgr, current_zones = task
+            self._classify_object(
+                object_id, camera, timestamp, resized_crop, crop_bgr, current_zones
+            )
         elif kind == "expire":
             _, object_id = task
             if object_id in self.classification_history:
@@ -595,6 +605,7 @@ class CustomObjectClassificationProcessor(DeferredRealtimeProcessorApi):
         timestamp: float,
         resized_crop: np.ndarray,
         crop_bgr: np.ndarray,
+        current_zones: list[str] | None = None,
     ) -> None:
         if self.interpreter is None:
             save_attempts = (
@@ -673,19 +684,20 @@ class CustomObjectClassificationProcessor(DeferredRealtimeProcessorApi):
         )
 
         if consensus_label is not None and self.model_config.object_config is not None:
-            self._emit_result(
-                {
-                    "type": "classification",
-                    "processor": "object",
-                    "model_name": self.model_config.name,
-                    "classification_type": self.model_config.object_config.classification_type,
-                    "object_id": object_id,
-                    "camera": camera,
-                    "timestamp": timestamp,
-                    "label": consensus_label,
-                    "score": consensus_score,
-                }
-            )
+            result: dict[str, Any] = {
+                "type": "classification",
+                "processor": "object",
+                "model_name": self.model_config.name,
+                "classification_type": self.model_config.object_config.classification_type,
+                "object_id": object_id,
+                "camera": camera,
+                "timestamp": timestamp,
+                "label": consensus_label,
+                "score": consensus_score,
+            }
+            if current_zones:
+                result["zones"] = current_zones
+            self._emit_result(result)
 
     def handle_request(
         self, topic: str, request_data: dict[str, Any]
