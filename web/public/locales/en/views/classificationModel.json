@@ -14,7 +14,8 @@
     "trainModel": "Train Model",
     "addClassification": "Add Classification",
     "deleteModels": "Delete Models",
-    "editModel": "Edit Model"
+    "editModel": "Edit Model",
+    "categorizeImages": "Classify Images"
   },
   "tooltip": {
     "trainingInProgress": "Model is currently training",
@@ -28,6 +29,7 @@
       "deletedModel_other": "Successfully deleted {{count}} models",
       "categorizedImage": "Successfully Classified Image",
       "reclassifiedImage": "Successfully Reclassified Image",
+      "batchCategorized": "Successfully classified {{count}} images",
       "trainedModel": "Successfully trained model.",
       "trainingModel": "Successfully started model training.",
       "updatedModel": "Successfully updated model configuration",
@@ -42,11 +44,15 @@
       "deleteCategoryFailed": "Failed to delete class: {{errorMessage}}",
       "deleteModelFailed": "Failed to delete model: {{errorMessage}}",
       "categorizeFailed": "Failed to categorize image: {{errorMessage}}",
+      "batchCategorizeFailed": "Failed to classify {{count}} images",
       "trainingFailed": "Model training failed. Check Frigate logs for details.",
       "trainingFailedToStart": "Failed to start model training: {{errorMessage}}",
       "updateModelFailed": "Failed to update model: {{errorMessage}}",
       "renameCategoryFailed": "Failed to rename class: {{errorMessage}}",
       "reclassifyFailed": "Failed to reclassify image: {{errorMessage}}"
+    },
+    "warning": {
+      "partialBatchCategorized": "Classified {{success}} of {{total}} images successfully."
     }
   },
   "deleteCategory": {
