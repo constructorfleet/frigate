@@ -445,6 +445,86 @@ export default function FaceLibrary() {
                 </>
               )}
             </div>
+            {pageToggle === "train" && (
+              <FaceSelectionDialog
+                faceNames={faces}
+                onTrainAttempt={(name) => {
+                  // Batch train all selected faces
+                  let successCount = 0;
+                  let failCount = 0;
+                  const totalCount = selectedFaces.length;
+
+                  selectedFaces.forEach((filename, index) => {
+                    axios
+                      .post(`/faces/train/${name}/classify`, {
+                        training_file: filename,
+                      })
+                      .then((resp) => {
+                        if (resp.status == 200) {
+                          successCount++;
+                        } else {
+                          failCount++;
+                        }
+
+                        // Show final toast after all requests complete
+                        if (index === totalCount - 1) {
+                          if (successCount === totalCount) {
+                            toast.success(
+                              t("toast.success.batchTrainedFaces", {
+                                count: successCount,
+                              }),
+                              {
+                                position: "top-center",
+                              },
+                            );
+                          } else if (successCount > 0) {
+                            toast.warning(
+                              t("toast.warning.partialBatchTrained", {
+                                success: successCount,
+                                total: totalCount,
+                              }),
+                              {
+                                position: "top-center",
+                              },
+                            );
+                          } else {
+                            toast.error(
+                              t("toast.error.batchTrainFailed", {
+                                count: totalCount,
+                              }),
+                              {
+                                position: "top-center",
+                              },
+                            );
+                          }
+                          setSelectedFaces([]);
+                          refreshFaces();
+                        }
+                      })
+                      .catch(() => {
+                        failCount++;
+                        if (index === totalCount - 1) {
+                          toast.error(
+                            t("toast.error.batchTrainFailed", {
+                              count: totalCount,
+                            }),
+                            {
+                              position: "top-center",
+                            },
+                          );
+                          setSelectedFaces([]);
+                          refreshFaces();
+                        }
+                      });
+                  });
+                }}
+              >
+                <Button className="flex gap-2">
+                  <AddFaceIcon className="size-7 rounded-md p-1 text-secondary-foreground" />
+                  {isDesktop && t("button.trainFaces")}
+                </Button>
+              </FaceSelectionDialog>
+            )}
             <Button
               className="flex gap-2"
               onClick={() =>
@@ -866,6 +946,7 @@ type FaceAttemptGroupProps = {
         ) => FaceLibraryData | undefined),
     opts?: boolean | { revalidate?: boolean },
   ) => Promise<FaceLibraryData | undefined>;
+  onClickEvent: (event: Event) => void;
 };
 function FaceAttemptGroup({
   config,
@@ -875,6 +956,7 @@ function FaceAttemptGroup({
   selectedFaces,
   onClickFaces,
   onRefresh,
+  onClickEvent,
 }: FaceAttemptGroupProps) {
   const { t } = useTranslation(["views/faceLibrary", "views/explore"]);
 
@@ -892,6 +974,10 @@ function FaceAttemptGroup({
   const handleClickEvent = useCallback(
     (meta: boolean) => {
       if (!meta) {
+        // Open detail view when clicking without meta key
+        if (event) {
+          onClickEvent(event);
+        }
         return;
       } else {
         const anySelected =
@@ -916,7 +1002,7 @@ function FaceAttemptGroup({
         }
       }
     },
-    [group, selectedFaces, onClickFaces],
+    [group, selectedFaces, onClickFaces, event, onClickEvent],
   );
 
   // api calls
