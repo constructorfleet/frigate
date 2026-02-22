@@ -1618,7 +1618,8 @@ function ObjectDetailsTab({
                 const model = config?.classification?.custom?.[modelName];
                 if (!model) return null;
 
-                const classes = Object.keys(modelAttributes?.[modelName] ?? {});
+                const displayName = model.name || modelName;
+                const classes = modelAttributes?.[displayName] ?? [];
                 if (classes.length === 0) return null;
 
                 return (
