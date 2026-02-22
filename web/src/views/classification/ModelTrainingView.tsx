@@ -46,7 +46,7 @@ import {
 } from "react";
 import { isDesktop, isMobileOnly } from "react-device-detect";
 import { Trans, useTranslation } from "react-i18next";
-import { LuPencil, LuTrash2 } from "react-icons/lu";
+import { LuListChecks, LuPencil, LuTrash2 } from "react-icons/lu";
 import { toast } from "sonner";
 import useSWR from "swr";
 import ClassificationSelectionDialog from "@/components/overlay/ClassificationSelectionDialog";
@@ -76,6 +76,7 @@ import SearchDetailDialog, {
 import { SearchResult } from "@/types/search";
 import { HiSparkles } from "react-icons/hi";
 import { capitalizeFirstLetter } from "@/utils/stringUtil";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type ModelTrainingViewProps = {
   model: CustomClassificationModelConfig;
@@ -150,10 +151,21 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
   // image multiselect
 
   const [selectedImages, setSelectedImages] = useState<string[]>([]);
+  const [selectionModeEnabled, setSelectionModeEnabled] = useState(false);
+
+  const toggleSelectionMode = useCallback(() => {
+    setSelectionModeEnabled((prev) => {
+      const next = !prev;
+      if (!next) {
+        setSelectedImages([]);
+      }
+      return next;
+    });
+  }, []);
 
   const onClickImages = useCallback(
     (images: string[], ctrl: boolean) => {
-      if (selectedImages.length == 0 && !ctrl) {
+      if (!selectionModeEnabled && selectedImages.length == 0 && !ctrl) {
         return;
       }
 
@@ -179,7 +191,7 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
 
       setSelectedImages(newSelectedImages);
     },
-    [selectedImages, setSelectedImages],
+    [selectionModeEnabled, selectedImages, setSelectedImages],
   );
 
   // actions
@@ -558,6 +570,19 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
             )}
             <Button
               className="flex gap-2"
+              variant={selectionModeEnabled ? "select" : "default"}
+              onClick={toggleSelectionMode}
+            >
+              <LuListChecks className="size-7 rounded-md p-1 text-secondary-foreground" />
+              {isDesktop &&
+                t(
+                  selectionModeEnabled
+                    ? "button.disableSelection"
+                    : "button.enableSelection",
+                )}
+            </Button>
+            <Button
+              className="flex gap-2"
               onClick={() => setDeleteDialogOpen(selectedImages)}
             >
               <LuTrash2 className="size-7 rounded-md p-1 text-secondary-foreground" />
@@ -566,6 +591,19 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
           </div>
         ) : (
           <div className="flex flex-row gap-2">
+            <Button
+              className="flex gap-2"
+              variant={selectionModeEnabled ? "select" : "default"}
+              onClick={toggleSelectionMode}
+            >
+              <LuListChecks className="size-7 rounded-md p-1 text-secondary-foreground" />
+              {isDesktop &&
+                t(
+                  selectionModeEnabled
+                    ? "button.disableSelection"
+                    : "button.enableSelection",
+                )}
+            </Button>
             <TrainFilterDialog
               filter={trainFilter}
               filterValues={{ classes: Object.keys(dataset || {}) }}
@@ -624,6 +662,7 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
           trainImages={trainImages || []}
           trainFilter={trainFilter}
           selectedImages={selectedImages}
+          showSelectionCheckboxes={selectionModeEnabled}
           onRefresh={refreshAll}
           onClickImages={onClickImages}
           onDelete={onDelete}
@@ -636,6 +675,7 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
           classes={Object.keys(dataset || {})}
           images={dataset?.[pageToggle] || []}
           selectedImages={selectedImages}
+          showSelectionCheckboxes={selectionModeEnabled}
           onClickImages={onClickImages}
           onDelete={onDelete}
           onReclassify={onReclassify}
@@ -880,6 +920,7 @@ type DatasetGridProps = {
   classes: string[];
   images: string[];
   selectedImages: string[];
+  showSelectionCheckboxes: boolean;
   onClickImages: (images: string[], ctrl: boolean) => void;
   onDelete: (ids: string[]) => void;
   onReclassify: (image: string, newCategory: string) => void;
@@ -891,6 +932,7 @@ function DatasetGrid({
   classes,
   images,
   selectedImages,
+  showSelectionCheckboxes,
   onClickImages,
   onDelete,
   onReclassify,
@@ -916,10 +958,23 @@ function DatasetGrid({
               name: "",
             }}
             showArea={false}
-            clickable={selectedImages.length > 0}
+            clickable={selectedImages.length > 0 || showSelectionCheckboxes}
             selected={selectedImages.includes(image)}
             i18nLibrary="views/classificationModel"
-            onClick={(data, _) => onClickImages([data.filename], true)}
+            topLeftContent={
+              showSelectionCheckboxes ? (
+                <div className="rounded bg-black/60 p-1">
+                  <Checkbox
+                    checked={selectedImages.includes(image)}
+                    onCheckedChange={() => onClickImages([image], true)}
+                    aria-label={t("button.selectImage")}
+                  />
+                </div>
+              ) : undefined
+            }
+            onClick={(data, meta) =>
+              onClickImages([data.filename], meta || showSelectionCheckboxes)
+            }
           >
             <ClassificationSelectionDialog
               classes={classes}
@@ -962,6 +1017,7 @@ type TrainGridProps = {
   trainImages: string[];
   trainFilter?: TrainFilter;
   selectedImages: string[];
+  showSelectionCheckboxes: boolean;
   onClickImages: (images: string[], ctrl: boolean) => void;
   onRefresh: () => void;
   onDelete: (ids: string[]) => void;
@@ -973,6 +1029,7 @@ function TrainGrid({
   trainImages,
   trainFilter,
   selectedImages,
+  showSelectionCheckboxes,
   onClickImages,
   onRefresh,
   onDelete,
@@ -1029,6 +1086,7 @@ function TrainGrid({
         classes={classes}
         trainData={trainData}
         selectedImages={selectedImages}
+        showSelectionCheckboxes={showSelectionCheckboxes}
         onClickImages={onClickImages}
         onRefresh={onRefresh}
         onDelete={onDelete}
@@ -1043,6 +1101,7 @@ function TrainGrid({
       classes={classes}
       trainData={trainData}
       selectedImages={selectedImages}
+      showSelectionCheckboxes={showSelectionCheckboxes}
       onClickImages={onClickImages}
       onRefresh={onRefresh}
     />
@@ -1055,6 +1114,7 @@ type StateTrainGridProps = {
   classes: string[];
   trainData?: ClassificationItemData[];
   selectedImages: string[];
+  showSelectionCheckboxes: boolean;
   onClickImages: (images: string[], ctrl: boolean) => void;
   onRefresh: () => void;
   onDelete: (ids: string[]) => void;
@@ -1065,9 +1125,12 @@ function StateTrainGrid({
   classes,
   trainData,
   selectedImages,
+  showSelectionCheckboxes,
   onClickImages,
   onRefresh,
 }: StateTrainGridProps) {
+  const { t } = useTranslation(["views/classificationModel"]);
+
   const threshold = useMemo(() => {
     return {
       recognition: model.threshold,
@@ -1088,15 +1151,29 @@ function StateTrainGrid({
             data={data}
             threshold={threshold}
             selected={selectedImages.includes(data.filename)}
-            clickable={selectedImages.length > 0}
+            clickable={selectedImages.length > 0 || showSelectionCheckboxes}
             i18nLibrary="views/classificationModel"
             showArea={false}
-            onClick={(data, meta) => onClickImages([data.filename], meta)}
+            topLeftContent={
+              showSelectionCheckboxes ? (
+                <div className="rounded bg-black/60 p-1">
+                  <Checkbox
+                    checked={selectedImages.includes(data.filename)}
+                    onCheckedChange={() => onClickImages([data.filename], true)}
+                    aria-label={t("button.selectImage")}
+                  />
+                </div>
+              ) : undefined
+            }
+            onClick={(data, meta) =>
+              onClickImages([data.filename], meta || showSelectionCheckboxes)
+            }
           >
             <ClassificationSelectionDialog
               classes={classes}
               modelName={model.name}
               image={data.filename}
+              images={selectedImages}
               onRefresh={onRefresh}
             >
               <BlurredIconButton>
@@ -1116,6 +1193,7 @@ type ObjectTrainGridProps = {
   classes: string[];
   trainData?: ClassificationItemData[];
   selectedImages: string[];
+  showSelectionCheckboxes: boolean;
   onClickImages: (images: string[], ctrl: boolean) => void;
   onRefresh: () => void;
 };
@@ -1125,9 +1203,12 @@ function ObjectTrainGrid({
   classes,
   trainData,
   selectedImages,
+  showSelectionCheckboxes,
   onClickImages,
   onRefresh,
 }: ObjectTrainGridProps) {
+  const { t } = useTranslation(["views/classificationModel"]);
+
   // item data
 
   const groups = useMemo(() => {
@@ -1229,6 +1310,32 @@ function ObjectTrainGrid({
     [selectedImages, onClickImages],
   );
 
+  const toggleGroupSelection = useCallback(
+    (group: ClassificationItemData[]) => {
+      const selectedCount = group.filter((item) =>
+        selectedImages.includes(item.filename),
+      ).length;
+      const allSelected = selectedCount === group.length;
+
+      if (allSelected) {
+        onClickImages(
+          group
+            .filter((item) => selectedImages.includes(item.filename))
+            .map((item) => item.filename),
+          false,
+        );
+      } else {
+        onClickImages(
+          group
+            .filter((item) => !selectedImages.includes(item.filename))
+            .map((item) => item.filename),
+          true,
+        );
+      }
+    },
+    [onClickImages, selectedImages],
+  );
+
   return (
     <>
       <SearchDetailDialog
@@ -1262,6 +1369,27 @@ function ObjectTrainGrid({
                 i18nLibrary="views/classificationModel"
                 objectType={model.object_config?.objects?.at(0) ?? "Object"}
                 noClassificationLabel="details.none"
+                topLeftContent={
+                  showSelectionCheckboxes ? (
+                    <div className="rounded bg-black/60 p-1">
+                      <Checkbox
+                        checked={
+                          group.filter((item) =>
+                            selectedImages.includes(item.filename),
+                          ).length === group.length
+                            ? true
+                            : group.some((item) =>
+                                  selectedImages.includes(item.filename),
+                                )
+                              ? "indeterminate"
+                              : false
+                        }
+                        onCheckedChange={() => toggleGroupSelection(group)}
+                        aria-label={t("button.selectGroup")}
+                      />
+                    </div>
+                  ) : undefined
+                }
                 onClick={(data) => {
                   if (data) {
                     onClickImages([data.filename], true);
@@ -1276,6 +1404,7 @@ function ObjectTrainGrid({
                       classes={classes}
                       modelName={model.name}
                       image={data.filename}
+                      images={selectedImages}
                       onRefresh={onRefresh}
                     >
                       <BlurredIconButton>

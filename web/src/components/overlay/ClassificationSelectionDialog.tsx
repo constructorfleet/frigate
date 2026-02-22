@@ -33,12 +33,10 @@ type ClassificationSelectionDialogProps = {
   className?: string;
   classes: string[];
   modelName: string;
-  image: string;
-  onRefresh?: () => void;
-  onCategorize?: (category: string) => void;
-  excludeCategory?: string;
-  dialogLabel?: string;
-  tooltipLabel?: string;
+  image?: string;
+  images?: string[];
+  onRefresh: () => void;
+  onCategorize?: (category: string, images: string[]) => void;
   children: ReactNode;
 };
 export default function ClassificationSelectionDialog({
@@ -46,53 +44,110 @@ export default function ClassificationSelectionDialog({
   classes,
   modelName,
   image,
+  images,
   onRefresh,
   onCategorize,
-  excludeCategory,
-  dialogLabel,
-  tooltipLabel,
   children,
 }: ClassificationSelectionDialogProps) {
   const { t } = useTranslation(["views/classificationModel"]);
 
   const onCategorizeImage = useCallback(
     (category: string) => {
+      const targetImages = images?.length ? images : image ? [image] : [];
+
+      // If custom categorize handler is provided, use it instead
       if (onCategorize) {
-        onCategorize(category);
+        onCategorize(category, targetImages);
         return;
       }
 
-      axios
-        .post(`/classification/${modelName}/dataset/categorize`, {
-          category,
-          training_file: image,
-        })
-        .then((resp) => {
-          if (resp.status == 200) {
-            toast.success(t("toast.success.categorizedImage"), {
+      if (targetImages.length === 0) {
+        toast.error(t("toast.error.batchCategorizeFailed", { count: 0 }), {
+          position: "top-center",
+        });
+        return;
+      }
+
+      if (targetImages.length === 1) {
+        // Default behavior: categorize a single image.
+        axios
+          .post(`/classification/${modelName}/dataset/categorize`, {
+            category,
+            training_file: targetImages[0],
+          })
+          .then((resp) => {
+            if (resp.status == 200) {
+              toast.success(t("toast.success.categorizedImage"), {
+                position: "top-center",
+              });
+              onRefresh();
+            }
+          })
+          .catch((error) => {
+            const errorMessage =
+              error.response?.data?.message ||
+              error.response?.data?.detail ||
+              "Unknown error";
+            toast.error(t("toast.error.categorizeFailed", { errorMessage }), {
               position: "top-center",
             });
-            onRefresh?.();
-          }
-        })
-        .catch((error) => {
-          const errorMessage =
-            error.response?.data?.message ||
-            error.response?.data?.detail ||
-            "Unknown error";
-          toast.error(t("toast.error.categorizeFailed", { errorMessage }), {
-            position: "top-center",
           });
-        });
+        return;
+      }
+
+      const requests = targetImages.map((filename) =>
+        axios
+          .post(`/classification/${modelName}/dataset/categorize`, {
+            category,
+            training_file: filename,
+          })
+          .then(() => true)
+          .catch(() => false),
+      );
+
+      Promise.allSettled(requests).then((results) => {
+        const successCount = results.filter(
+          (result) => result.status === "fulfilled" && result.value,
+        ).length;
+        const totalCount = results.length;
+
+        if (successCount === totalCount) {
+          toast.success(
+            t("toast.success.batchCategorized", {
+              count: successCount,
+            }),
+            {
+              position: "top-center",
+            },
+          );
+        } else if (successCount > 0) {
+          toast.warning(
+            t("toast.warning.partialBatchCategorized", {
+              success: successCount,
+              total: totalCount,
+            }),
+            {
+              position: "top-center",
+            },
+          );
+        } else {
+          toast.error(
+            t("toast.error.batchCategorizeFailed", {
+              count: totalCount,
+            }),
+            {
+              position: "top-center",
+            },
+          );
+        }
+
+        onRefresh();
+      });
     },
-    [modelName, image, onRefresh, onCategorize, t],
+    [modelName, image, images, onRefresh, onCategorize, t],
   );
 
-  const filteredClasses = useMemo(
-    () =>
-      excludeCategory ? classes.filter((c) => c !== excludeCategory) : classes,
-    [classes, excludeCategory],
-  );
+  const filteredClasses = useMemo(() => classes, [classes]);
 
   const isChildButton = useMemo(
     () => React.isValidElement(children) && children.type === Button,
@@ -130,7 +185,7 @@ export default function ClassificationSelectionDialog({
   // keep modal false on desktop to prevent dismissable layer pointer events
   // issue with dialog auto-close
   return (
-    <div className={className ?? "flex"}>
+    <div className={className ?? "flex"} data-card-action="true">
       <TextEntryDialog
         open={newClass}
         setOpen={setNewClass}
@@ -142,9 +197,7 @@ export default function ClassificationSelectionDialog({
           <TooltipTrigger asChild={isChildButton}>
             <SelectorTrigger asChild>{children}</SelectorTrigger>
           </TooltipTrigger>
-          <TooltipContent>
-            {tooltipLabel ?? t("categorizeImage")}
-          </TooltipContent>
+          <TooltipContent>{t("categorizeImage")}</TooltipContent>
         </Tooltip>
         <SelectorContent
           ref={scrollContainerRef}
@@ -160,9 +213,7 @@ export default function ClassificationSelectionDialog({
               <DrawerDescription>Details</DrawerDescription>
             </DrawerHeader>
           )}
-          <DropdownMenuLabel>
-            {dialogLabel ?? t("categorizeImageAs")}
-          </DropdownMenuLabel>
+          <DropdownMenuLabel>{t("categorizeImageAs")}</DropdownMenuLabel>
           <div
             className={cn(
               "flex flex-col",
