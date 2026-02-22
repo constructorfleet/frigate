@@ -53,7 +53,14 @@ export default function ClassificationSelectionDialog({
 
   const onCategorizeImage = useCallback(
     (category: string) => {
-      const targetImages = images?.length ? images : image ? [image] : [];
+      const targetImages =
+        images?.length && image && !images.includes(image)
+          ? [image, ...images]
+          : images?.length
+            ? images
+            : image
+              ? [image]
+              : [];
 
       // If custom categorize handler is provided, use it instead
       if (onCategorize) {
