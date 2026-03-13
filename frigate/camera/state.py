@@ -524,6 +524,7 @@ class CameraState:
                 camera_activity["objects"].append(
                     {
                         "id": obj.obj_data["id"],
+                        "object_type": object_type,
                         "label": label,
                         "stationary": not active,
                         "area": obj.obj_data["area"],
