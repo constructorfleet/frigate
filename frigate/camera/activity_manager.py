@@ -28,6 +28,10 @@ class CameraActivityManager:
         self.camera_active_object_counts: dict[str, Counter] = {}
         self.zone_all_object_counts: dict[str, Counter] = {}
         self.zone_active_object_counts: dict[str, Counter] = {}
+        self.zone_all_label_counts: dict[str, Counter] = {}
+        self.zone_active_label_counts: dict[str, Counter] = {}
+        self.zone_all_attribute_counts: dict[str, Counter] = {}
+        self.zone_active_attribute_counts: dict[str, Counter] = {}
         self.all_zone_labels: dict[str, set[str]] = {}
 
         for camera_config in config.cameras.values():
@@ -45,6 +49,10 @@ class CameraActivityManager:
             if zone not in self.all_zone_labels:
                 self.zone_all_object_counts[zone] = Counter()
                 self.zone_active_object_counts[zone] = Counter()
+                self.zone_all_label_counts[zone] = Counter()
+                self.zone_active_label_counts[zone] = Counter()
+                self.zone_all_attribute_counts[zone] = Counter()
+                self.zone_active_attribute_counts[zone] = Counter()
                 self.all_zone_labels[zone] = set()
 
             self.all_zone_labels[zone].update(
@@ -112,6 +120,86 @@ class CameraActivityManager:
                     any_changed = True
                     self.publish(f"{zone}/{label}/active", new_active_count)
                     self.zone_active_object_counts[zone][label] = new_active_count
+
+            # Compute custom classification (sub_label) counts per object type
+            all_zone_label_counts = Counter(
+                (obj["object_type"], obj["sub_label"])
+                for obj in zone_objects_by_id.values()
+                if obj.get("sub_label")
+            )
+            active_zone_label_counts = Counter(
+                (obj["object_type"], obj["sub_label"])
+                for obj in active_zone_objects_by_id.values()
+                if obj.get("sub_label")
+            )
+
+            # Publish sub-label (custom classification) counts
+            for key in set(all_zone_label_counts) | set(
+                self.zone_all_label_counts[zone]
+            ):
+                object_type, sub_label = key
+                new_count = all_zone_label_counts[key]
+                new_active = active_zone_label_counts[key]
+
+                if (
+                    new_count != self.zone_all_label_counts[zone][key]
+                    or key not in self.zone_all_label_counts[zone]
+                ):
+                    any_changed = True
+                    self.publish(f"{zone}/{object_type}/label/{sub_label}", new_count)
+                    self.zone_all_label_counts[zone][key] = new_count
+
+                if (
+                    new_active != self.zone_active_label_counts[zone][key]
+                    or key not in self.zone_active_label_counts[zone]
+                ):
+                    any_changed = True
+                    self.publish(
+                        f"{zone}/{object_type}/label/{sub_label}/active", new_active
+                    )
+                    self.zone_active_label_counts[zone][key] = new_active
+
+            # Compute attribute counts per object type
+            # Attributes are objects whose label differs from object_type and have no sub_label
+            all_zone_attribute_counts = Counter(
+                (obj["object_type"], obj["label"])
+                for obj in zone_objects_by_id.values()
+                if not obj.get("sub_label") and obj["object_type"] != obj["label"]
+            )
+            active_zone_attribute_counts = Counter(
+                (obj["object_type"], obj["label"])
+                for obj in active_zone_objects_by_id.values()
+                if not obj.get("sub_label") and obj["object_type"] != obj["label"]
+            )
+
+            # Publish attribute counts
+            for key in set(all_zone_attribute_counts) | set(
+                self.zone_all_attribute_counts[zone]
+            ):
+                object_type, attribute = key
+                new_count = all_zone_attribute_counts[key]
+                new_active = active_zone_attribute_counts[key]
+
+                if (
+                    new_count != self.zone_all_attribute_counts[zone][key]
+                    or key not in self.zone_all_attribute_counts[zone]
+                ):
+                    any_changed = True
+                    self.publish(
+                        f"{zone}/{object_type}/attribute/{attribute}", new_count
+                    )
+                    self.zone_all_attribute_counts[zone][key] = new_count
+
+                if (
+                    new_active != self.zone_active_attribute_counts[zone][key]
+                    or key not in self.zone_active_attribute_counts[zone]
+                ):
+                    any_changed = True
+                    self.publish(
+                        f"{zone}/{object_type}/attribute/{attribute}/active",
+                        new_active,
+                    )
+                    self.zone_active_attribute_counts[zone][key] = new_active
 
             if any_changed:
                 self.publish(f"{zone}/all", sum(list(all_zone_objects.values())))
