@@ -358,6 +358,209 @@ class TestZoneAttributePublishing(unittest.TestCase):
         self.assertEqual([], attribute_topics)
 
 
+class TestCameraLabelPublishing(unittest.TestCase):
+    """Tests that custom classification sub-label counts are published to
+    {camera}/{object_type}/label/{sub_label} and {camera}/{object_type}/label/{sub_label}/active.
+    """
+
+    def setUp(self):
+        self.publish = MagicMock()
+        self.manager = CameraActivityManager(_make_config(), self.publish)
+
+    def test_sub_label_total_published_for_camera(self):
+        """Publish {camera}/{object_type}/label/{sub_label} for a classified object."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "person",
+                        "person-verified",
+                        sub_label="running",
+                        stationary=True,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/person/label/running", 1)
+
+    def test_sub_label_active_published_for_camera(self):
+        """Publish {camera}/{object_type}/label/{sub_label}/active for active classified object."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "person",
+                        "person-verified",
+                        sub_label="running",
+                        stationary=False,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/person/label/running", 1)
+        self.publish.assert_any_call("front/person/label/running/active", 1)
+
+    def test_sub_label_active_zero_when_stationary_for_camera(self):
+        """Active count is 0 when classified object is stationary on a camera."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "person",
+                        "person-verified",
+                        sub_label="walking",
+                        stationary=True,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/person/label/walking", 1)
+        self.publish.assert_any_call("front/person/label/walking/active", 0)
+
+    def test_sub_label_count_drops_to_zero_for_camera(self):
+        """Count drops to 0 and is published when a classified object leaves the camera."""
+        activity_with = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "person",
+                        "person-verified",
+                        sub_label="running",
+                        stationary=False,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        activity_without = {"front": {"motion": False, "objects": []}}
+
+        self.manager.update_activity(activity_with)
+        self.publish.reset_mock()
+        self.manager.update_activity(activity_without)
+
+        self.publish.assert_any_call("front/person/label/running", 0)
+        self.publish.assert_any_call("front/person/label/running/active", 0)
+
+
+class TestCameraAttributePublishing(unittest.TestCase):
+    """Tests that attribute counts are published to
+    {camera}/{object_type}/attribute/{attribute} and
+    {camera}/{object_type}/attribute/{attribute}/active.
+    """
+
+    def setUp(self):
+        self.publish = MagicMock()
+        self.manager = CameraActivityManager(_make_config(), self.publish)
+
+    def test_attribute_total_published_for_camera(self):
+        """Publish {camera}/{object_type}/attribute/{attribute} for an attribute object."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "car",
+                        "amazon",
+                        sub_label=None,
+                        stationary=True,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/car/attribute/amazon", 1)
+
+    def test_attribute_active_published_for_camera(self):
+        """Publish {camera}/{object_type}/attribute/{attribute}/active for active attribute object."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "car",
+                        "amazon",
+                        sub_label=None,
+                        stationary=False,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/car/attribute/amazon", 1)
+        self.publish.assert_any_call("front/car/attribute/amazon/active", 1)
+
+    def test_attribute_active_zero_when_stationary_for_camera(self):
+        """Active count is 0 when attribute object is stationary on a camera."""
+        activity = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "car",
+                        "license_plate",
+                        sub_label=None,
+                        stationary=True,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        self.manager.update_activity(activity)
+
+        self.publish.assert_any_call("front/car/attribute/license_plate", 1)
+        self.publish.assert_any_call("front/car/attribute/license_plate/active", 0)
+
+    def test_attribute_count_drops_to_zero_for_camera(self):
+        """Count drops to 0 and is published when an attribute object leaves the camera."""
+        activity_with = {
+            "front": {
+                "motion": False,
+                "objects": [
+                    _make_object(
+                        "obj1",
+                        "car",
+                        "amazon",
+                        sub_label=None,
+                        stationary=False,
+                        current_zones=[],
+                    )
+                ],
+            }
+        }
+        activity_without = {"front": {"motion": False, "objects": []}}
+
+        self.manager.update_activity(activity_with)
+        self.publish.reset_mock()
+        self.manager.update_activity(activity_without)
+
+        self.publish.assert_any_call("front/car/attribute/amazon", 0)
+        self.publish.assert_any_call("front/car/attribute/amazon/active", 0)
+
+
 class TestNoRepublishUnchanged(unittest.TestCase):
     """Tests that counts are only re-published when they actually change."""
 
