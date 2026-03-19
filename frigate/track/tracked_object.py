@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 # (ex: car loitering on the street vs when a known person parks on the street)
 # person is the main object that should keep alerts going as long as they loiter
 # even if they are stationary.
-EXTENDED_LOITERING_OBJECTS = ["person"]
+EXTENDED_LOITERING_OBJECTS = ["person", "waste_bin", "package"]
 
 
 class TrackedObject:
