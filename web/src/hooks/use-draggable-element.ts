@@ -4,14 +4,15 @@ import { FrigateConfig } from "@/types/frigateConfig";
 import useSWR from "swr";
 import { formatUnixTimestampToDateTime } from "@/utils/dateUtil";
 import { useDateLocale } from "./use-date-locale";
+import { useTimeFormat } from "./use-date-utils";
 import { useTranslation } from "react-i18next";
 import useUserInteraction from "./use-user-interaction";
 
 type DraggableElementProps = {
-  contentRef: React.RefObject<HTMLElement>;
-  timelineRef: React.RefObject<HTMLDivElement>;
-  segmentsRef: React.RefObject<HTMLDivElement>;
-  draggableElementRef: React.RefObject<HTMLDivElement>;
+  contentRef: React.RefObject<HTMLElement | null>;
+  timelineRef: React.RefObject<HTMLDivElement | null>;
+  segmentsRef: React.RefObject<HTMLDivElement | null>;
+  draggableElementRef: React.RefObject<HTMLDivElement | null>;
   segmentDuration: number;
   showDraggableElement: boolean;
   draggableElementTime?: number;
@@ -168,7 +169,7 @@ function useDraggableElement({
   const { t } = useTranslation(["common"]);
   const locale = useDateLocale();
 
-  const timeFormat = config?.ui.time_format === "24hour" ? "24hour" : "12hour";
+  const timeFormat = useTimeFormat(config);
   const format = useMemo(() => {
     const formatKey = `time.${
       segmentDuration < 60 && !dense

@@ -8,7 +8,7 @@ from queue import Queue
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import Literal
 
 from frigate.detectors.detection_api import DetectionApi
@@ -30,8 +30,18 @@ class ModelConfig(BaseModel):
 
 
 class MemryXDetectorConfig(BaseDetectorConfig):
+    """MemryX MX3 detector that runs compiled DFP models on MemryX accelerators."""
+
+    model_config = ConfigDict(
+        title="MemryX",
+    )
+
     type: Literal[DETECTOR_KEY]
-    device: str = Field(default="PCIe", title="Device Path")
+    device: str = Field(
+        default="PCIe",
+        title="Device Path",
+        description="The device to use for MemryX inference (e.g. 'PCIe').",
+    )
 
 
 class MemryXDetector(DetectionApi):
@@ -307,7 +317,7 @@ class MemryXDetector(DetectionApi):
                             f"Failed to remove downloaded zip {zip_path}: {e}"
                         )
 
-    def send_input(self, connection_id, tensor_input: np.ndarray):
+    def send_input(self, connection_id, tensor_input: np.ndarray) -> None:
         """Pre-process (if needed) and send frame to MemryX input queue"""
         if tensor_input is None:
             raise ValueError("[send_input] No image data provided for inference")

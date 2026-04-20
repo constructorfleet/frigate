@@ -4,13 +4,14 @@ import datetime
 import logging
 import os
 import random
+import re
 import shutil
 import string
 import subprocess as sp
 import threading
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from peewee import DoesNotExist
 
@@ -33,16 +34,69 @@ from frigate.util.time import is_current_hour
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_TIME_LAPSE_FFMPEG_ARGS = "-vf setpts=0.04*PTS -r 30"
 TIMELAPSE_DATA_INPUT_ARGS = "-an -skip_frame nokey"
 
+# Matches the setpts factor used in timelapse exports (e.g. setpts=0.04*PTS).
+# Captures the floating-point factor so we can scale expected duration.
+SETPTS_FACTOR_RE = re.compile(r"setpts=([0-9]*\.?[0-9]+)\*PTS")
 
-def lower_priority():
-    os.nice(PROCESS_PRIORITY_LOW)
+# ffmpeg flags that can read from or write to arbitrary files
+BLOCKED_FFMPEG_ARGS = frozenset(
+    {
+        "-i",
+        "-filter_script",
+        "-filter_complex",
+        "-lavfi",
+        "-vf",
+        "-af",
+        "-filter",
+        "-vstats_file",
+        "-passlogfile",
+        "-sdp_file",
+        "-dump_attachment",
+        "-attach",
+    }
+)
 
 
-class PlaybackFactorEnum(str, Enum):
-    realtime = "realtime"
-    timelapse_25x = "timelapse_25x"
+def validate_ffmpeg_args(args: str) -> tuple[bool, str]:
+    """Validate that user-provided ffmpeg args don't allow input/output injection.
+
+    Blocks:
+    - The -i flag and other flags that read/write arbitrary files
+    - Filter flags (can read files via movie=/amovie= source filters)
+    - Absolute/relative file paths (potential extra outputs)
+    - URLs and ffmpeg protocol references (data exfiltration)
+
+    Admin users skip this validation entirely since they are trusted.
+    """
+    if not args or not args.strip():
+        return True, ""
+
+    tokens = args.split()
+    for token in tokens:
+        # Block flags that could inject inputs or write to arbitrary files
+        if token.lower() in BLOCKED_FFMPEG_ARGS:
+            return False, f"Forbidden ffmpeg argument: {token}"
+
+        # Block tokens that look like file paths (potential output injection)
+        if (
+            token.startswith("/")
+            or token.startswith("./")
+            or token.startswith("../")
+            or token.startswith("~")
+        ):
+            return False, "File paths are not allowed in custom ffmpeg arguments"
+
+        # Block URLs and ffmpeg protocol references (e.g. http://, tcp://, pipe:, file:)
+        if "://" in token or token.startswith("pipe:") or token.startswith("file:"):
+            return (
+                False,
+                "Protocol references are not allowed in custom ffmpeg arguments",
+            )
+
+    return True, ""
 
 
 class PlaybackSourceEnum(str, Enum):
@@ -62,8 +116,12 @@ class RecordingExporter(threading.Thread):
         image: Optional[str],
         start_time: int,
         end_time: int,
-        playback_factor: PlaybackFactorEnum,
         playback_source: PlaybackSourceEnum,
+        export_case_id: Optional[str] = None,
+        ffmpeg_input_args: Optional[str] = None,
+        ffmpeg_output_args: Optional[str] = None,
+        cpu_fallback: bool = False,
+        on_progress: Optional[Callable[[str, float], None]] = None,
     ) -> None:
         super().__init__()
         self.config = config
@@ -73,11 +131,217 @@ class RecordingExporter(threading.Thread):
         self.user_provided_image = image
         self.start_time = start_time
         self.end_time = end_time
-        self.playback_factor = playback_factor
         self.playback_source = playback_source
+        self.export_case_id = export_case_id
+        self.ffmpeg_input_args = ffmpeg_input_args
+        self.ffmpeg_output_args = ffmpeg_output_args
+        self.cpu_fallback = cpu_fallback
+        self.on_progress = on_progress
 
         # ensure export thumb dir
         Path(os.path.join(CLIPS_DIR, "export")).mkdir(exist_ok=True)
+
+    def _emit_progress(self, step: str, percent: float) -> None:
+        """Invoke the progress callback if one was supplied."""
+        if self.on_progress is None:
+            return
+        try:
+            self.on_progress(step, max(0.0, min(100.0, percent)))
+        except Exception:
+            logger.exception("Export progress callback failed")
+
+    def _expected_output_duration_seconds(self) -> float:
+        """Compute the expected duration of the output video in seconds.
+
+        Users often request a wide time range (e.g. a full hour) when only
+        a few minutes of recordings actually live on disk for that span,
+        so the requested range overstates the work and progress would
+        plateau very early. We sum the actual saved seconds from the
+        Recordings/Previews tables and use that as the input duration.
+        Timelapse exports then scale this by the setpts factor.
+        """
+        requested_duration = max(0.0, float(self.end_time - self.start_time))
+
+        recorded = self._sum_source_duration_seconds()
+        input_duration = (
+            recorded if recorded is not None and recorded > 0 else requested_duration
+        )
+
+        if not self.ffmpeg_output_args:
+            return input_duration
+
+        match = SETPTS_FACTOR_RE.search(self.ffmpeg_output_args)
+        if match is None:
+            return input_duration
+
+        try:
+            factor = float(match.group(1))
+        except ValueError:
+            return input_duration
+
+        if factor <= 0:
+            return input_duration
+
+        return input_duration * factor
+
+    def _sum_source_duration_seconds(self) -> Optional[float]:
+        """Sum saved-video seconds inside [start_time, end_time].
+
+        Queries Recordings or Previews depending on the playback source,
+        clamps each segment to the requested range, and returns the total.
+        Returns ``None`` on any error so the caller can fall back to the
+        requested range duration without losing progress reporting.
+        """
+        try:
+            if self.playback_source == PlaybackSourceEnum.recordings:
+                rows = (
+                    Recordings.select(Recordings.start_time, Recordings.end_time)
+                    .where(
+                        Recordings.start_time.between(self.start_time, self.end_time)
+                        | Recordings.end_time.between(self.start_time, self.end_time)
+                        | (
+                            (self.start_time > Recordings.start_time)
+                            & (self.end_time < Recordings.end_time)
+                        )
+                    )
+                    .where(Recordings.camera == self.camera)
+                    .iterator()
+                )
+            else:
+                rows = (
+                    Previews.select(Previews.start_time, Previews.end_time)
+                    .where(
+                        Previews.start_time.between(self.start_time, self.end_time)
+                        | Previews.end_time.between(self.start_time, self.end_time)
+                        | (
+                            (self.start_time > Previews.start_time)
+                            & (self.end_time < Previews.end_time)
+                        )
+                    )
+                    .where(Previews.camera == self.camera)
+                    .iterator()
+                )
+        except Exception:
+            logger.exception(
+                "Failed to sum source duration for export %s", self.export_id
+            )
+            return None
+
+        total = 0.0
+        try:
+            for row in rows:
+                clipped_start = max(float(row.start_time), float(self.start_time))
+                clipped_end = min(float(row.end_time), float(self.end_time))
+                if clipped_end > clipped_start:
+                    total += clipped_end - clipped_start
+        except Exception:
+            logger.exception(
+                "Failed to read recording rows for export %s", self.export_id
+            )
+            return None
+
+        return total
+
+    def _inject_progress_flags(self, ffmpeg_cmd: list[str]) -> list[str]:
+        """Insert FFmpeg progress reporting flags before the output path.
+
+        ``-progress pipe:2`` writes structured key=value lines to stderr,
+        ``-nostats`` suppresses the noisy default stats output.
+        """
+        if not ffmpeg_cmd:
+            return ffmpeg_cmd
+        return ffmpeg_cmd[:-1] + ["-progress", "pipe:2", "-nostats", ffmpeg_cmd[-1]]
+
+    def _run_ffmpeg_with_progress(
+        self,
+        ffmpeg_cmd: list[str],
+        playlist_lines: str | list[str],
+        step: str = "encoding",
+    ) -> tuple[int, str]:
+        """Run an FFmpeg export command, parsing progress events from stderr.
+
+        Returns ``(returncode, captured_stderr)``. Stdout is left attached to
+        the parent process so we don't have to drain it (and risk a deadlock
+        if the buffer fills). Progress percent is computed against the
+        expected output duration; values are clamped to [0, 100] inside
+        :py:meth:`_emit_progress`.
+        """
+        cmd = ["nice", "-n", str(PROCESS_PRIORITY_LOW)] + self._inject_progress_flags(
+            ffmpeg_cmd
+        )
+
+        if isinstance(playlist_lines, list):
+            stdin_payload = "\n".join(playlist_lines)
+        else:
+            stdin_payload = playlist_lines
+
+        expected_duration = self._expected_output_duration_seconds()
+
+        self._emit_progress(step, 0.0)
+
+        proc = sp.Popen(
+            cmd,
+            stdin=sp.PIPE,
+            stderr=sp.PIPE,
+            text=True,
+            encoding="ascii",
+            errors="replace",
+        )
+
+        assert proc.stdin is not None
+        assert proc.stderr is not None
+
+        try:
+            proc.stdin.write(stdin_payload)
+        except (BrokenPipeError, OSError):
+            # FFmpeg may have rejected the input early; still wait for it
+            # to terminate so the returncode is meaningful.
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+
+        captured: list[str] = []
+
+        try:
+            for raw_line in proc.stderr:
+                captured.append(raw_line)
+                line = raw_line.strip()
+
+                if not line:
+                    continue
+
+                if line.startswith("out_time_us="):
+                    if expected_duration <= 0:
+                        continue
+                    try:
+                        out_time_us = int(line.split("=", 1)[1])
+                    except (ValueError, IndexError):
+                        continue
+                    if out_time_us < 0:
+                        continue
+                    out_seconds = out_time_us / 1_000_000.0
+                    percent = (out_seconds / expected_duration) * 100.0
+                    self._emit_progress(step, percent)
+                elif line == "progress=end":
+                    self._emit_progress(step, 100.0)
+                    break
+        except Exception:
+            logger.exception("Failed reading FFmpeg progress for %s", self.export_id)
+
+        proc.wait()
+
+        # Drain any remaining stderr so callers can log it on failure.
+        try:
+            remaining = proc.stderr.read()
+            if remaining:
+                captured.append(remaining)
+        except Exception:
+            pass
+
+        return proc.returncode, "".join(captured)
 
     def get_datetime_from_timestamp(self, timestamp: int) -> str:
         # return in iso format
@@ -100,7 +364,7 @@ class RecordingExporter(threading.Thread):
         ):
             # has preview mp4
             try:
-                preview: Previews = (
+                preview = (
                     Previews.select(
                         Previews.camera,
                         Previews.path,
@@ -154,9 +418,9 @@ class RecordingExporter(threading.Thread):
         else:
             # need to generate from existing images
             preview_dir = os.path.join(CACHE_DIR, "preview_frames")
-            file_start = f"preview_{self.camera}"
-            start_file = f"{file_start}-{self.start_time}.{PREVIEW_FRAME_TYPE}"
-            end_file = f"{file_start}-{self.end_time}.{PREVIEW_FRAME_TYPE}"
+            file_start = f"preview_{self.camera}-"
+            start_file = f"{file_start}{self.start_time}.{PREVIEW_FRAME_TYPE}"
+            end_file = f"{file_start}{self.end_time}.{PREVIEW_FRAME_TYPE}"
             selected_preview = None
 
             for file in sorted(os.listdir(preview_dir)):
@@ -179,15 +443,21 @@ class RecordingExporter(threading.Thread):
 
         return thumb_path
 
-    def get_record_export_command(self, video_path: str) -> list[str]:
+    def get_record_export_command(
+        self, video_path: str, use_hwaccel: bool = True
+    ) -> tuple[list[str], str | list[str]]:
+        # handle case where internal port is a string with ip:port
+        internal_port = self.config.networking.listen.internal
+        if type(internal_port) is str:
+            internal_port = int(internal_port.split(":")[-1])
+
+        playlist_lines: list[str] = []
         if (self.end_time - self.start_time) <= MAX_PLAYLIST_SECONDS:
-            playlist_lines = f"http://127.0.0.1:5000/vod/{self.camera}/start/{self.start_time}/end/{self.end_time}/index.m3u8"
+            playlist_url = f"http://127.0.0.1:{internal_port}/vod/{self.camera}/start/{self.start_time}/end/{self.end_time}/index.m3u8"
             ffmpeg_input = (
-                f"-y -protocol_whitelist pipe,file,http,tcp -i {playlist_lines}"
+                f"-y -protocol_whitelist pipe,file,http,tcp -i {playlist_url}"
             )
         else:
-            playlist_lines = []
-
             # get full set of recordings
             export_recordings = (
                 Recordings.select(
@@ -213,24 +483,29 @@ class RecordingExporter(threading.Thread):
             for page in range(1, num_pages + 1):
                 playlist = export_recordings.paginate(page, page_size)
                 playlist_lines.append(
-                    f"file 'http://127.0.0.1:5000/vod/{self.camera}/start/{float(playlist[0].start_time)}/end/{float(playlist[-1].end_time)}/index.m3u8'"
+                    f"file 'http://127.0.0.1:{internal_port}/vod/{self.camera}/start/{float(playlist[0].start_time)}/end/{float(playlist[-1].end_time)}/index.m3u8'"
                 )
 
             ffmpeg_input = "-y -protocol_whitelist pipe,file,http,tcp -f concat -safe 0 -i /dev/stdin"
 
-        if self.playback_factor == PlaybackFactorEnum.realtime:
-            ffmpeg_cmd = (
-                f"{self.config.ffmpeg.ffmpeg_path} -hide_banner {ffmpeg_input} -c copy -movflags +faststart"
-            ).split(" ")
-        elif self.playback_factor == PlaybackFactorEnum.timelapse_25x:
+        if self.ffmpeg_input_args is not None and self.ffmpeg_output_args is not None:
+            hwaccel_args = (
+                self.config.cameras[self.camera].record.export.hwaccel_args
+                if use_hwaccel
+                else None
+            )
             ffmpeg_cmd = (
                 parse_preset_hardware_acceleration_encode(
                     self.config.ffmpeg.ffmpeg_path,
-                    self.config.ffmpeg.hwaccel_args,
-                    f"-an {ffmpeg_input}",
-                    f"{self.config.cameras[self.camera].record.export.timelapse_args} -movflags +faststart",
+                    hwaccel_args,
+                    f"{self.ffmpeg_input_args} -an {ffmpeg_input}".strip(),
+                    f"{self.ffmpeg_output_args} -movflags +faststart".strip(),
                     EncodeTypeEnum.timelapse,
                 )
+            ).split(" ")
+        else:
+            ffmpeg_cmd = (
+                f"{self.config.ffmpeg.ffmpeg_path} -hide_banner {ffmpeg_input} -c copy -movflags +faststart"
             ).split(" ")
 
         # add metadata
@@ -241,16 +516,18 @@ class RecordingExporter(threading.Thread):
 
         return ffmpeg_cmd, playlist_lines
 
-    def get_preview_export_command(self, video_path: str) -> list[str]:
+    def get_preview_export_command(
+        self, video_path: str, use_hwaccel: bool = True
+    ) -> tuple[list[str], list[str]]:
         playlist_lines = []
         codec = "-c copy"
 
         if is_current_hour(self.start_time):
             # get list of current preview frames
             preview_dir = os.path.join(CACHE_DIR, "preview_frames")
-            file_start = f"preview_{self.camera}"
-            start_file = f"{file_start}-{self.start_time}.{PREVIEW_FRAME_TYPE}"
-            end_file = f"{file_start}-{self.end_time}.{PREVIEW_FRAME_TYPE}"
+            file_start = f"preview_{self.camera}-"
+            start_file = f"{file_start}{self.start_time}.{PREVIEW_FRAME_TYPE}"
+            end_file = f"{file_start}{self.end_time}.{PREVIEW_FRAME_TYPE}"
 
             for file in sorted(os.listdir(preview_dir)):
                 if not file.startswith(file_start):
@@ -291,7 +568,6 @@ class RecordingExporter(threading.Thread):
             .iterator()
         )
 
-        preview: Previews
         for preview in export_previews:
             playlist_lines.append(f"file '{preview.path}'")
 
@@ -309,19 +585,24 @@ class RecordingExporter(threading.Thread):
             "-y -protocol_whitelist pipe,file,tcp -f concat -safe 0 -i /dev/stdin"
         )
 
-        if self.playback_factor == PlaybackFactorEnum.realtime:
-            ffmpeg_cmd = (
-                f"{self.config.ffmpeg.ffmpeg_path} -hide_banner {ffmpeg_input} {codec} -movflags +faststart {video_path}"
-            ).split(" ")
-        elif self.playback_factor == PlaybackFactorEnum.timelapse_25x:
+        if self.ffmpeg_input_args is not None and self.ffmpeg_output_args is not None:
+            hwaccel_args = (
+                self.config.cameras[self.camera].record.export.hwaccel_args
+                if use_hwaccel
+                else None
+            )
             ffmpeg_cmd = (
                 parse_preset_hardware_acceleration_encode(
                     self.config.ffmpeg.ffmpeg_path,
-                    self.config.ffmpeg.hwaccel_args,
-                    f"{TIMELAPSE_DATA_INPUT_ARGS} {ffmpeg_input}",
-                    f"{self.config.cameras[self.camera].record.export.timelapse_args} -movflags +faststart {video_path}",
+                    hwaccel_args,
+                    f"{self.ffmpeg_input_args} {TIMELAPSE_DATA_INPUT_ARGS} {ffmpeg_input}".strip(),
+                    f"{self.ffmpeg_output_args} -movflags +faststart {video_path}".strip(),
                     EncodeTypeEnum.timelapse,
                 )
+            ).split(" ")
+        else:
+            ffmpeg_cmd = (
+                f"{self.config.ffmpeg.ffmpeg_path} -hide_banner {ffmpeg_input} {codec} -movflags +faststart {video_path}"
             ).split(" ")
 
         # add metadata
@@ -334,6 +615,7 @@ class RecordingExporter(threading.Thread):
         logger.debug(
             f"Beginning export for {self.camera} from {self.start_time} to {self.end_time}"
         )
+        self._emit_progress("preparing", 0.0)
         export_name = (
             self.user_provided_name
             or f"{self.camera.replace('_', ' ')} {self.get_datetime_from_timestamp(self.start_time)} {self.get_datetime_from_timestamp(self.end_time)}"
@@ -348,17 +630,20 @@ class RecordingExporter(threading.Thread):
         video_path = f"{EXPORT_DIR}/{self.camera}_{filename_start_datetime}-{filename_end_datetime}_{cleaned_export_id}.mp4"
         thumb_path = self.save_thumbnail(self.export_id)
 
-        Export.insert(
-            {
-                Export.id: self.export_id,
-                Export.camera: self.camera,
-                Export.name: export_name,
-                Export.date: self.start_time,
-                Export.video_path: video_path,
-                Export.thumb_path: thumb_path,
-                Export.in_progress: True,
-            }
-        ).execute()
+        export_values = {
+            Export.id: self.export_id,
+            Export.camera: self.camera,
+            Export.name: export_name,
+            Export.date: self.start_time,
+            Export.video_path: video_path,
+            Export.thumb_path: thumb_path,
+            Export.in_progress: True,
+        }
+
+        if self.export_case_id is not None:
+            export_values[Export.export_case] = self.export_case_id
+
+        Export.insert(export_values).execute()
 
         try:
             if self.playback_source == PlaybackSourceEnum.recordings:
@@ -368,24 +653,55 @@ class RecordingExporter(threading.Thread):
         except DoesNotExist:
             return
 
-        p = sp.run(
-            ffmpeg_cmd,
-            input="\n".join(playlist_lines),
-            encoding="ascii",
-            preexec_fn=lower_priority,
-            capture_output=True,
+        # When neither custom ffmpeg arg is set the default path uses
+        # `-c copy` (stream copy — no re-encoding). Report that as a
+        # distinct step so the UI doesn't mislabel a remux as encoding.
+        # The retry branch below always re-encodes because cpu_fallback
+        # requires custom args; it stays "encoding_retry".
+        is_stream_copy = (
+            self.ffmpeg_input_args is None and self.ffmpeg_output_args is None
+        )
+        initial_step = "copying" if is_stream_copy else "encoding"
+
+        returncode, stderr = self._run_ffmpeg_with_progress(
+            ffmpeg_cmd, playlist_lines, step=initial_step
         )
 
-        if p.returncode != 0:
+        # If export failed and cpu_fallback is enabled, retry without hwaccel
+        if (
+            returncode != 0
+            and self.cpu_fallback
+            and self.ffmpeg_input_args is not None
+            and self.ffmpeg_output_args is not None
+        ):
+            logger.warning(
+                f"Export with hardware acceleration failed, retrying without hwaccel for {self.export_id}"
+            )
+
+            if self.playback_source == PlaybackSourceEnum.recordings:
+                ffmpeg_cmd, playlist_lines = self.get_record_export_command(
+                    video_path, use_hwaccel=False
+                )
+            else:
+                ffmpeg_cmd, playlist_lines = self.get_preview_export_command(
+                    video_path, use_hwaccel=False
+                )
+
+            returncode, stderr = self._run_ffmpeg_with_progress(
+                ffmpeg_cmd, playlist_lines, step="encoding_retry"
+            )
+
+        if returncode != 0:
             logger.error(
                 f"Failed to export {self.playback_source.value} for command {' '.join(ffmpeg_cmd)}"
             )
-            logger.error(p.stderr)
+            logger.error(stderr)
             Path(video_path).unlink(missing_ok=True)
             Export.delete().where(Export.id == self.export_id).execute()
             Path(thumb_path).unlink(missing_ok=True)
             return
         else:
+            self._emit_progress("finalizing", 100.0)
             Export.update({Export.in_progress: False}).where(
                 Export.id == self.export_id
             ).execute()
@@ -393,7 +709,7 @@ class RecordingExporter(threading.Thread):
         logger.debug(f"Finished exporting {video_path}")
 
 
-def migrate_exports(ffmpeg: FfmpegConfig, camera_names: list[str]):
+def migrate_exports(ffmpeg: FfmpegConfig, camera_names: list[str]) -> None:
     Path(os.path.join(CLIPS_DIR, "export")).mkdir(exist_ok=True)
 
     exports = []

@@ -5,6 +5,12 @@ title: Frigate+
 
 For more information about how to use Frigate+ to improve your model, see the [Frigate+ docs](/plus/).
 
+:::info
+
+Frigate+ requires an active internet connection to communicate with `https://api.frigate.video` for model downloads, image uploads, and annotations. See [Network Requirements](/frigate/network_requirements#frigate) for details.
+
+:::
+
 ## Setup
 
 ### Create an account
@@ -19,11 +25,11 @@ Once logged in, you can generate an API key for Frigate in Settings.
 
 ### Set your API key
 
-In Frigate, you can use an environment variable or a docker secret named `PLUS_API_KEY` to enable the `Frigate+` buttons on the Explore page. Home Assistant Addon users can set it under Settings > Add-ons > Frigate > Configuration > Options (be sure to toggle the "Show unused optional configuration options" switch).
+In Frigate, you can use an environment variable or a docker secret named `PLUS_API_KEY` to enable the `Frigate+` buttons on the Explore page. Home Assistant App users can set it under Settings > Apps > Frigate > Configuration > Options (be sure to toggle the "Show unused optional configuration options" switch).
 
 :::warning
 
-You cannot use the `environment_vars` section of your Frigate configuration file to set this environment variable. It must be defined as an environment variable in the docker config or Home Assistant Add-on config.
+You cannot use the `environment_vars` section of your Frigate configuration file to set this environment variable. It must be defined as an environment variable in the docker config or Home Assistant App config.
 
 :::
 
@@ -54,6 +60,8 @@ Once you have [requested your first model](../plus/first_model.md) and gotten yo
 You can either choose the new model from the Frigate+ pane in the Settings page of the Frigate UI, or manually set the model at the root level in your config:
 
 ```yaml
+detectors: ...
+
 model:
   path: plus://<your_model_id>
 ```

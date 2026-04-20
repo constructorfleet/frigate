@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TrackingDetailsSequence } from "@/types/timeline";
 import { getLifecycleItemDescription } from "@/utils/lifecycleUtil";
 import { useDetailStream } from "@/context/detail-stream-context";
@@ -8,6 +8,7 @@ import {
   formatUnixTimestampToDateTime,
   getDurationFromTimestamps,
 } from "@/utils/dateUtil";
+import { use24HourTime } from "@/hooks/use-date-utils";
 import { useTranslation } from "react-i18next";
 import AnnotationOffsetSlider from "@/components/overlay/detail/AnnotationOffsetSlider";
 import { FrigateConfig } from "@/types/frigateConfig";
@@ -33,6 +34,7 @@ import { MdAutoAwesome } from "react-icons/md";
 import { isPWA } from "@/utils/isPWA";
 import { isInIframe } from "@/utils/isIFrame";
 import { GenAISummaryDialog } from "../overlay/chip/GenAISummaryChip";
+import { Separator } from "../ui/separator";
 
 type DetailStreamProps = {
   reviewItems?: ReviewSegment[];
@@ -49,7 +51,8 @@ export default function DetailStream({
 }: DetailStreamProps) {
   const { data: config } = useSWR<FrigateConfig>("config");
   const { t } = useTranslation("views/events");
-  const { annotationOffset } = useDetailStream();
+  const { annotationOffset, selectedObjectIds, setSelectedObjectIds } =
+    useDetailStream();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const [activeReviewId, setActiveReviewId] = useState<string | undefined>(
@@ -67,9 +70,69 @@ export default function DetailStream({
     true,
   );
 
-  const onSeekCheckPlaying = (timestamp: number) => {
-    onSeek(timestamp, isPlaying);
-  };
+  // When the settings panel opens, pin to the nearest review with detections
+  // so the user can visually align the bounding box using the offset slider
+  const pinnedDetectTimestampRef = useRef<number | null>(null);
+  const wasControlsExpandedRef = useRef(false);
+  const selectedBeforeExpandRef = useRef<string[]>([]);
+
+  const onSeekCheckPlaying = useCallback(
+    (timestamp: number) => {
+      onSeek(timestamp, isPlaying);
+    },
+    [onSeek, isPlaying],
+  );
+
+  useEffect(() => {
+    if (controlsExpanded && !wasControlsExpandedRef.current) {
+      selectedBeforeExpandRef.current = selectedObjectIds;
+
+      const items = (reviewItems ?? []).filter(
+        (r) => r.data?.detections?.length > 0,
+      );
+      if (items.length > 0) {
+        // Pick the nearest review to current effective time
+        let nearest = items[0];
+        let minDiff = Math.abs(effectiveTime - nearest.start_time);
+        for (const r of items) {
+          const diff = Math.abs(effectiveTime - r.start_time);
+          if (diff < minDiff) {
+            nearest = r;
+            minDiff = diff;
+          }
+        }
+
+        const nearestId = `review-${nearest.id ?? nearest.start_time ?? Math.floor(nearest.start_time ?? 0)}`;
+        setActiveReviewId(nearestId);
+
+        const detectionId = nearest.data.detections[0];
+        setSelectedObjectIds([detectionId]);
+
+        // Use the detection's actual start timestamp (parsed from its ID)
+        // rather than review.start_time, which can be >10ms away from any
+        // lifecycle event and would fail the bounding-box TOLERANCE check.
+        const detectTimestamp = parseFloat(detectionId);
+        pinnedDetectTimestampRef.current = detectTimestamp;
+        const recordTime = detectTimestamp + annotationOffset / 1000;
+        onSeek(recordTime, false);
+      }
+    }
+    if (!controlsExpanded && wasControlsExpandedRef.current) {
+      pinnedDetectTimestampRef.current = null;
+      setSelectedObjectIds(selectedBeforeExpandRef.current);
+    }
+    wasControlsExpandedRef.current = controlsExpanded;
+    // Only trigger on expand/collapse transition
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [controlsExpanded]);
+
+  // Re-seek on annotation offset change while settings panel is open
+  useEffect(() => {
+    const pinned = pinnedDetectTimestampRef.current;
+    if (!controlsExpanded || pinned == null) return;
+    const recordTime = pinned + annotationOffset / 1000;
+    onSeek(recordTime, false);
+  }, [controlsExpanded, annotationOffset, onSeek]);
 
   // Ensure we initialize the active review when reviewItems first arrive.
   // This helps when the component mounts while the video is already
@@ -214,6 +277,12 @@ export default function DetailStream({
       />
 
       <div className="relative flex h-full flex-col">
+        {controlsExpanded && (
+          <div
+            className="absolute inset-0 z-20 cursor-pointer bg-black/50"
+            onClick={() => setControlsExpanded(false)}
+          />
+        )}
         <div
           ref={scrollRef}
           className="scrollbar-container flex-1 overflow-y-auto overflow-x-hidden pb-14"
@@ -267,8 +336,9 @@ export default function DetailStream({
             )}
           </button>
           {controlsExpanded && (
-            <div className="space-y-3 px-3 pb-3">
+            <div className="space-y-4 px-3 pb-5 pt-2">
               <AnnotationOffsetSlider />
+              <Separator />
               <div className="flex flex-col gap-1">
                 <div className="flex items-center justify-between">
                   <label className="text-sm font-medium">
@@ -329,12 +399,12 @@ function ReviewGroup({
     }
   }, [isActive, alwaysExpandActive]);
 
+  const is24Hour = use24HourTime(config);
   const displayTime = formatUnixTimestampToDateTime(start, {
     timezone: config.ui.timezone,
-    date_format:
-      config.ui.time_format == "24hour"
-        ? t("time.formattedTimestampHourMinuteSecond.24hour", { ns: "common" })
-        : t("time.formattedTimestampHourMinuteSecond.12hour", { ns: "common" }),
+    date_format: is24Hour
+      ? t("time.formattedTimestampHourMinuteSecond.24hour", { ns: "common" })
+      : t("time.formattedTimestampHourMinuteSecond.12hour", { ns: "common" }),
     time_style: "medium",
     date_style: "medium",
   });
@@ -455,7 +525,7 @@ function ReviewGroup({
                       }
                     }}
                   >
-                    <span className="truncate hover:underline">
+                    <span className="block truncate hover:underline">
                       {review.data.metadata.title}
                     </span>
                   </GenAISummaryDialog>
@@ -718,17 +788,17 @@ function LifecycleItem({
     );
   }, [config, item]);
 
+  const is24Hour = use24HourTime(config);
   const formattedEventTimestamp = config
     ? formatUnixTimestampToDateTime(item?.timestamp ?? 0, {
         timezone: config.ui.timezone,
-        date_format:
-          config.ui.time_format == "24hour"
-            ? t("time.formattedTimestampHourMinuteSecond.24hour", {
-                ns: "common",
-              })
-            : t("time.formattedTimestampHourMinuteSecond.12hour", {
-                ns: "common",
-              }),
+        date_format: is24Hour
+          ? t("time.formattedTimestampHourMinuteSecond.24hour", {
+              ns: "common",
+            })
+          : t("time.formattedTimestampHourMinuteSecond.12hour", {
+              ns: "common",
+            }),
         time_style: "medium",
         date_style: "medium",
       })

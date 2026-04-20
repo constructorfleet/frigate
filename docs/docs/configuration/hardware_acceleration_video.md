@@ -4,12 +4,16 @@ title: Video Decoding
 ---
 
 import CommunityBadge from '@site/src/components/CommunityBadge';
+import ConfigTabs from "@site/src/components/ConfigTabs";
+import TabItem from "@theme/TabItem";
+import NavPath from "@site/src/components/NavPath";
 
 # Video Decoding
 
 It is highly recommended to use an integrated or discrete GPU for hardware acceleration video decoding in Frigate.
 
 Some types of hardware acceleration are detected and used automatically, but you may need to update your configuration to enable hardware accelerated decoding in ffmpeg. To verify that hardware acceleration is working:
+
 - Check the logs: A message will either say that hardware acceleration was automatically detected, or there will be a warning that no hardware acceleration was automatically detected
 - If hardware acceleration is specified in the config, verification can be done by ensuring the logs are free from errors. There is no CPU fallback for hardware acceleration.
 
@@ -55,19 +59,20 @@ Frigate can utilize most Intel integrated GPUs and Arc GPUs to accelerate video 
 
 **Recommended hwaccel Preset**
 
-| CPU Generation | Intel Driver | Recommended Preset  | Notes                                       |
-| -------------- | ------------ | ------------------- | ------------------------------------------- |
-| gen1 - gen5    | i965         | preset-vaapi        | qsv is not supported, may not support H.265 |
-| gen6 - gen7    | iHD          | preset-vaapi        | qsv is not supported                        |
-| gen8 - gen12   | iHD          | preset-vaapi        | preset-intel-qsv-\* can also be used        |
-| gen13+         | iHD / Xe     | preset-intel-qsv-\* |                                             |
-| Intel Arc GPU  | iHD / Xe     | preset-intel-qsv-\* |                                             |
+| CPU Generation     | Intel Driver | Recommended Preset  | Notes                                       |
+| ------------------ | ------------ | ------------------- | ------------------------------------------- |
+| gen1 - gen5        | i965         | preset-vaapi        | qsv is not supported, may not support H.265 |
+| gen6 - gen7        | iHD          | preset-vaapi        | qsv is not supported                        |
+| gen8 - gen12       | iHD          | preset-vaapi        | preset-intel-qsv-\* can also be used        |
+| gen13+             | iHD / Xe     | preset-intel-qsv-\* |                                             |
+| Intel Arc A-series | iHD / Xe     | preset-intel-qsv-\* |                                             |
+| Intel Arc B-series | iHD / Xe     | preset-intel-qsv-\* | Requires host kernel 6.12+                  |
 
 :::
 
 :::note
 
-The default driver is `iHD`. You may need to change the driver to `i965` by adding the following environment variable `LIBVA_DRIVER_NAME=i965` to your docker-compose file or [in the `config.yml` for HA Add-on users](advanced.md#environment_vars).
+The default driver is `iHD`. You may need to change the driver to `i965` by adding the following environment variable `LIBVA_DRIVER_NAME=i965` to your docker-compose file or [in the `config.yml` for HA App users](advanced.md#environment_vars).
 
 See [The Intel Docs](https://www.intel.com/content/www/us/en/support/articles/000005505/processors.html) to figure out what generation your CPU is.
 
@@ -77,26 +82,59 @@ See [The Intel Docs](https://www.intel.com/content/www/us/en/support/articles/00
 
 VAAPI supports automatic profile selection so it will work automatically with both H.264 and H.265 streams.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `VAAPI (Intel/AMD GPU)`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 ffmpeg:
   hwaccel_args: preset-vaapi
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Via Quicksync
 
 #### H.264 streams
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `Intel QuickSync (H.264)`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 ffmpeg:
   hwaccel_args: preset-intel-qsv-h264
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### H.265 streams
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `Intel QuickSync (H.265)`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 ffmpeg:
   hwaccel_args: preset-intel-qsv-h265
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ### Configuring Intel GPU Stats in Docker
 
@@ -116,12 +154,13 @@ services:
   frigate:
     ...
     image: ghcr.io/blakeblackshear/frigate:stable
+    # highlight-next-line
     privileged: true
 ```
 
 ##### Docker Run CLI - Privileged
 
-```bash
+```bash {4}
 docker run -d \
   --name frigate \
   ...
@@ -135,7 +174,7 @@ Only recent versions of Docker support the `CAP_PERFMON` capability. You can tes
 
 ##### Docker Compose - CAP_PERFMON
 
-```yaml
+```yaml {5,6}
 services:
   frigate:
     ...
@@ -146,7 +185,7 @@ services:
 
 ##### Docker Run CLI - CAP_PERFMON
 
-```bash
+```bash {4}
 docker run -d \
   --name frigate \
   ...
@@ -188,16 +227,27 @@ Frigate can utilize modern AMD integrated GPUs and AMD GPUs to accelerate video 
 
 ### Configuring Radeon Driver
 
-You need to change the driver to `radeonsi` by adding the following environment variable `LIBVA_DRIVER_NAME=radeonsi` to your docker-compose file or [in the `config.yml` for HA Add-on users](advanced.md#environment_vars).
+You need to change the driver to `radeonsi` by adding the following environment variable `LIBVA_DRIVER_NAME=radeonsi` to your docker-compose file or [in the `config.yml` for HA App users](advanced.md#environment_vars).
 
 ### Via VAAPI
 
 VAAPI supports automatic profile selection so it will work automatically with both H.264 and H.265 streams.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `VAAPI (Intel/AMD GPU)`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 ffmpeg:
   hwaccel_args: preset-vaapi
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ## NVIDIA GPUs
 
@@ -213,7 +263,7 @@ Additional configuration is needed for the Docker container to be able to access
 
 #### Docker Compose - Nvidia GPU
 
-```yaml
+```yaml {5-12}
 services:
   frigate:
     ...
@@ -230,7 +280,7 @@ services:
 
 #### Docker Run CLI - Nvidia GPU
 
-```bash
+```bash {4}
 docker run -d \
   --name frigate \
   ...
@@ -242,10 +292,21 @@ docker run -d \
 
 Using `preset-nvidia` ffmpeg will automatically select the necessary profile for the incoming video, and will log an error if the profile is not supported by your GPU.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `NVIDIA GPU`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 ffmpeg:
   hwaccel_args: preset-nvidia
 ```
+
+</TabItem>
+</ConfigTabs>
 
 If everything is working correctly, you should see a significant improvement in performance.
 Verify that hardware decoding is working by running `nvidia-smi`, which should show `ffmpeg`
@@ -292,7 +353,15 @@ These instructions were originally based on the [Jellyfin documentation](https:/
 ## Raspberry Pi 3/4
 
 Ensure you increase the allocated RAM for your GPU to at least 128 (`raspi-config` > Performance Options > GPU Memory).
-If you are using the HA Add-on, you may need to use the full access variant and turn off _Protection mode_ for hardware acceleration.
+If you are using the HA App, you may need to use the full access variant and turn off _Protection mode_ for hardware acceleration.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `Raspberry Pi (H.264)` (for H.264 streams) or `Raspberry Pi (H.265)` (for H.265/HEVC streams). For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 # if you want to decode a h264 stream
@@ -304,12 +373,15 @@ ffmpeg:
   hwaccel_args: preset-rpi-64-h265
 ```
 
+</TabItem>
+</ConfigTabs>
+
 :::note
 
 If running Frigate through Docker, you either need to run in privileged mode or
 map the `/dev/video*` devices to Frigate. With Docker Compose add:
 
-```yaml
+```yaml {4-5}
 services:
   frigate:
     ...
@@ -319,7 +391,7 @@ services:
 
 Or with `docker run`:
 
-```bash
+```bash {4}
 docker run -d \
   --name frigate \
   ...
@@ -351,7 +423,7 @@ You will need to use the image with the nvidia container runtime:
 
 ### Docker Run CLI - Jetson
 
-```bash
+```bash {3}
 docker run -d \
   ...
   --runtime nvidia
@@ -360,7 +432,7 @@ docker run -d \
 
 ### Docker Compose - Jetson
 
-```yaml
+```yaml {5}
 services:
   frigate:
     ...
@@ -403,10 +475,21 @@ A list of supported codecs (you can use `ffmpeg -decoders | grep nvmpi` in the c
 
 For example, for H264 video, you'll select `preset-jetson-h264`.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `NVIDIA Jetson (H.264)` (or `NVIDIA Jetson (H.265)` for HEVC streams). For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 ffmpeg:
   hwaccel_args: preset-jetson-h264
 ```
+
+</TabItem>
+</ConfigTabs>
 
 If everything is working correctly, you should see a significant reduction in ffmpeg CPU load and power consumption.
 Verify that hardware decoding is working by running `jtop` (`sudo pip3 install -U jetson-stats`), which should show
@@ -422,12 +505,23 @@ Make sure to follow the [Rockchip specific installation instructions](/frigate/i
 
 ### Configuration
 
-Add one of the following FFmpeg presets to your `config.yml` to enable hardware video processing:
+Set the FFmpeg hwaccel preset to enable hardware video processing.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and set **Hardware acceleration arguments** to `Rockchip RKMPP`. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 ffmpeg:
   hwaccel_args: preset-rkmpp
 ```
+
+</TabItem>
+</ConfigTabs>
 
 :::note
 
@@ -451,14 +545,14 @@ Restarting ffmpeg...
 
 you should try to uprade to FFmpeg 7. This can be done using this config option:
 
-```
+```yaml
 ffmpeg:
   path: "7.0"
 ```
 
 You can set this option globally to use FFmpeg 7 for all cameras or on camera level to use it only for specific cameras. Do not confuse this option with:
 
-```
+```yaml
 cameras:
   name:
     ffmpeg:
@@ -478,15 +572,26 @@ Make sure to follow the [Synaptics specific installation instructions](/frigate/
 
 ### Configuration
 
-Add one of the following FFmpeg presets to your `config.yml` to enable hardware video processing:
+Set the FFmpeg hwaccel args to enable hardware video processing.
 
-```yaml
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > Global configuration > FFmpeg" /> and configure the hardware acceleration args and input args manually for Synaptics hardware. For per-camera overrides, navigate to <NavPath path="Settings > Camera configuration > FFmpeg" />.
+
+</TabItem>
+<TabItem value="yaml">
+
+```yaml {2}
 ffmpeg:
   hwaccel_args: -c:v h264_v4l2m2m
   input_args: preset-rtsp-restream
 output_args:
   record: preset-record-generic-audio-aac
 ```
+
+</TabItem>
+</ConfigTabs>
 
 :::warning
 

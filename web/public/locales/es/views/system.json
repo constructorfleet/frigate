@@ -5,7 +5,8 @@
     "logs": {
       "frigate": "Registros de Frigate - Frigate",
       "go2rtc": "Registros de Go2RTC - Frigate",
-      "nginx": "Registros de Nginx - Frigate"
+      "nginx": "Registros de Nginx - Frigate",
+      "websocket": "Mensajes Logs - Frigata"
     },
     "cameras": "Estadísticas de cámaras - Frigate",
     "enrichments": "Estadísticas de Enriquecimientos - Frigate"
@@ -31,6 +32,23 @@
     },
     "download": {
       "label": "Descargar registros"
+    },
+    "websocket": {
+      "label": "Mensajes",
+      "pause": "Pausar",
+      "resume": "Continuar",
+      "clear": "Limpiar",
+      "filter": {
+        "all": "Todos los temas",
+        "topics": "Temas",
+        "events": "Eventos",
+        "reviews": "Revisiones",
+        "face_recognition": "Reconocimiento facial",
+        "camera_activity": "Actividad de cámara",
+        "classification": "Clasificación"
+      },
+      "count_other": "{{count}} mensajes",
+      "count_one": "{{count}} mensaje"
     }
   },
   "title": "Sistema",
@@ -192,7 +210,7 @@
       "classification_speed": "Velocidad de clasificación de {{name}}",
       "classification_events_per_second": "Clasificacion de eventos por segundo de {{name}}"
     },
-    "title": "Enriquicimientos",
+    "title": "Enriquecimientos",
     "averageInf": "Tiempo promedio de inferencia"
   },
   "stats": {

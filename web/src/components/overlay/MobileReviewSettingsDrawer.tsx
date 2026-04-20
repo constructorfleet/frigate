@@ -2,8 +2,13 @@ import { useCallback, useState } from "react";
 import { Drawer, DrawerContent, DrawerTrigger } from "../ui/drawer";
 import { Button } from "../ui/button";
 import { FaArrowDown, FaCalendarAlt, FaCog, FaFilter } from "react-icons/fa";
+import { LuBug, LuShare2 } from "react-icons/lu";
 import { TimeRange } from "@/types/timeline";
-import { ExportContent, ExportPreviewDialog } from "./ExportDialog";
+import { ExportContent, ExportPreviewDialog, ExportTab } from "./ExportDialog";
+import {
+  DebugReplayContent,
+  SaveDebugReplayOverlay,
+} from "./DebugReplayDialog";
 import { ExportMode, GeneralFilter } from "@/types/filter";
 import ReviewActivityCalendar from "./ReviewActivityCalendar";
 import { SelectSeparator } from "../ui/select";
@@ -16,19 +21,37 @@ import {
 import { getEndOfDayTimestamp } from "@/utils/dateUtil";
 import { GeneralFilterContent } from "../filter/ReviewFilterGroup";
 import { toast } from "sonner";
-import axios from "axios";
+import axios, { AxiosError } from "axios";
 import SaveExportOverlay from "./SaveExportOverlay";
-import { isIOS, isMobile } from "react-device-detect";
+import { isMobile } from "react-device-detect";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
+import { StartExportResponse } from "@/types/export";
+import { ShareTimestampContent } from "./ShareTimestampDialog";
 
-type DrawerMode = "none" | "select" | "export" | "calendar" | "filter";
+type DrawerMode =
+  | "none"
+  | "select"
+  | "export"
+  | "calendar"
+  | "filter"
+  | "debug-replay"
+  | "share-timestamp";
 
-const DRAWER_FEATURES = ["export", "calendar", "filter"] as const;
+const DRAWER_FEATURES = [
+  "export",
+  "calendar",
+  "filter",
+  "debug-replay",
+  "share-timestamp",
+] as const;
 export type DrawerFeatures = (typeof DRAWER_FEATURES)[number];
 const DEFAULT_DRAWER_FEATURES: DrawerFeatures[] = [
   "export",
   "calendar",
   "filter",
+  "debug-replay",
+  "share-timestamp",
 ];
 
 type MobileReviewSettingsDrawerProps = {
@@ -45,6 +68,11 @@ type MobileReviewSettingsDrawerProps = {
   recordingsSummary?: RecordingsSummary;
   allLabels: string[];
   allZones: string[];
+  debugReplayMode?: ExportMode;
+  debugReplayRange?: TimeRange;
+  setDebugReplayMode?: (mode: ExportMode) => void;
+  setDebugReplayRange?: (range: TimeRange | undefined) => void;
+  onShareTimestamp?: (timestamp: number) => void;
   onUpdateFilter: (filter: ReviewFilter) => void;
   setRange: (range: TimeRange | undefined) => void;
   setMode: (mode: ExportMode) => void;
@@ -64,76 +92,221 @@ export default function MobileReviewSettingsDrawer({
   recordingsSummary,
   allLabels,
   allZones,
+  debugReplayMode = "none",
+  debugReplayRange,
+  setDebugReplayMode = () => {},
+  setDebugReplayRange = () => {},
+  onShareTimestamp = () => {},
   onUpdateFilter,
   setRange,
   setMode,
   setShowExportPreview,
 }: MobileReviewSettingsDrawerProps) {
-  const { t } = useTranslation(["views/recording", "components/dialog"]);
+  const { t } = useTranslation([
+    "views/recording",
+    "components/dialog",
+    "views/replay",
+    "common",
+  ]);
+  const navigate = useNavigate();
   const [drawerMode, setDrawerMode] = useState<DrawerMode>("none");
+  const [exportTab, setExportTab] = useState<ExportTab>("export");
+  const [selectedReplayOption, setSelectedReplayOption] = useState<
+    "1" | "5" | "custom" | "timeline"
+  >("1");
+  const [isDebugReplayStarting, setIsDebugReplayStarting] = useState(false);
+  const [selectedShareOption, setSelectedShareOption] = useState<
+    "current" | "custom"
+  >("current");
+  const [shareTimestampAtOpen, setShareTimestampAtOpen] = useState(
+    Math.floor(currentTime),
+  );
+  const [customShareTimestamp, setCustomShareTimestamp] = useState(
+    Math.floor(currentTime),
+  );
 
   // exports
 
   const [name, setName] = useState("");
-  const onStartExport = useCallback(() => {
+  const [selectedCaseId, setSelectedCaseId] = useState<string | undefined>(
+    undefined,
+  );
+  const [singleNewCaseName, setSingleNewCaseName] = useState("");
+  const [singleNewCaseDescription, setSingleNewCaseDescription] = useState("");
+  const [isStartingExport, setIsStartingExport] = useState(false);
+  const onStartExport = useCallback(async () => {
+    if (isStartingExport) {
+      return false;
+    }
+
     if (!range) {
-      toast.error(t("toast.error.noValidTimeSelected"), {
-        position: "top-center",
-      });
-      return;
+      toast.error(
+        t("export.toast.error.noVaildTimeSelected", {
+          ns: "components/dialog",
+        }),
+        {
+          position: "top-center",
+        },
+      );
+      return false;
     }
 
     if (range.before < range.after) {
-      toast.error(t("toast.error.endTimeMustAfterStartTime"), {
+      toast.error(
+        t("export.toast.error.endTimeMustAfterStartTime", {
+          ns: "components/dialog",
+        }),
+        {
+          position: "top-center",
+        },
+      );
+      return false;
+    }
+
+    setIsStartingExport(true);
+
+    try {
+      let exportCaseId: string | undefined = selectedCaseId;
+
+      if (selectedCaseId === "new" && singleNewCaseName.trim().length > 0) {
+        const caseResp = await axios.post("cases", {
+          name: singleNewCaseName.trim(),
+          description: singleNewCaseDescription.trim() || undefined,
+        });
+        exportCaseId = caseResp.data?.id;
+      } else if (selectedCaseId === "new" || selectedCaseId === "none") {
+        exportCaseId = undefined;
+      }
+
+      await axios.post<StartExportResponse>(
+        `export/${camera}/start/${Math.round(range.after)}/end/${Math.round(range.before)}`,
+        {
+          source: "recordings",
+          name,
+          export_case_id: exportCaseId,
+        },
+      );
+
+      toast.success(t("export.toast.queued", { ns: "components/dialog" }), {
         position: "top-center",
+        action: (
+          <a href="/export" target="_blank" rel="noopener noreferrer">
+            <Button>
+              {t("export.toast.view", { ns: "components/dialog" })}
+            </Button>
+          </a>
+        ),
       });
+      setName("");
+      setSelectedCaseId(undefined);
+      setSingleNewCaseName("");
+      setSingleNewCaseDescription("");
+      setRange(undefined);
+      setMode("none");
+      return true;
+    } catch (error) {
+      const apiError = error as {
+        response?: { data?: { message?: string; detail?: string } };
+      };
+      const errorMessage =
+        apiError.response?.data?.message ||
+        apiError.response?.data?.detail ||
+        "Unknown error";
+      toast.error(
+        t("export.toast.error.failed", {
+          ns: "components/dialog",
+          error: errorMessage,
+        }),
+        {
+          position: "top-center",
+        },
+      );
+      return false;
+    } finally {
+      setIsStartingExport(false);
+    }
+  }, [
+    camera,
+    isStartingExport,
+    name,
+    range,
+    selectedCaseId,
+    singleNewCaseDescription,
+    singleNewCaseName,
+    setRange,
+    setMode,
+    t,
+  ]);
+
+  const onStartDebugReplay = useCallback(async () => {
+    if (
+      !debugReplayRange ||
+      debugReplayRange.before <= debugReplayRange.after
+    ) {
+      toast.error(
+        t("dialog.toast.error", {
+          error: "End time must be after start time",
+          ns: "views/replay",
+        }),
+        { position: "top-center" },
+      );
       return;
     }
 
-    axios
-      .post(
-        `export/${camera}/start/${Math.round(range.after)}/end/${Math.round(range.before)}`,
-        {
-          playback: "realtime",
-          name,
-        },
-      )
-      .then((response) => {
-        if (response.status == 200) {
-          toast.success(
-            t("export.toast.success", { ns: "components/dialog" }),
-            {
-              position: "top-center",
-              action: (
-                <a href="/export" target="_blank" rel="noopener noreferrer">
-                  <Button>
-                    {t("export.toast.view", { ns: "components/dialog" })}
-                  </Button>
-                </a>
-              ),
-            },
-          );
-          setName("");
-          setRange(undefined);
-          setMode("none");
-        }
-      })
-      .catch((error) => {
-        const errorMessage =
-          error.response?.data?.message ||
-          error.response?.data?.detail ||
-          "Unknown error";
+    setIsDebugReplayStarting(true);
+
+    try {
+      const response = await axios.post("debug_replay/start", {
+        camera: camera,
+        start_time: debugReplayRange.after,
+        end_time: debugReplayRange.before,
+      });
+
+      if (response.status === 200) {
+        toast.success(t("dialog.toast.success", { ns: "views/replay" }), {
+          position: "top-center",
+        });
+        setDebugReplayMode("none");
+        setDebugReplayRange(undefined);
+        setDrawerMode("none");
+        navigate("/replay");
+      }
+    } catch (error) {
+      const axiosError = error as AxiosError<{
+        message?: string;
+        detail?: string;
+      }>;
+      const errorMessage =
+        axiosError.response?.data?.message ||
+        axiosError.response?.data?.detail ||
+        "Unknown error";
+
+      if (axiosError.response?.status === 409) {
+        toast.error(t("dialog.toast.alreadyActive", { ns: "views/replay" }), {
+          position: "top-center",
+        });
+      } else {
         toast.error(
-          t("export.toast.error.failed", {
-            ns: "components/dialog",
-            errorMessage,
+          t("dialog.toast.error", {
+            error: errorMessage,
+            ns: "views/replay",
           }),
           {
             position: "top-center",
           },
         );
-      });
-  }, [camera, name, range, setRange, setName, setMode, t]);
+      }
+    } finally {
+      setIsDebugReplayStarting(false);
+    }
+  }, [
+    camera,
+    debugReplayRange,
+    navigate,
+    setDebugReplayMode,
+    setDebugReplayRange,
+    t,
+  ]);
 
   // filters
 
@@ -157,12 +330,34 @@ export default function MobileReviewSettingsDrawer({
             className="flex w-full items-center justify-center gap-2"
             aria-label={t("export")}
             onClick={() => {
+              setExportTab("export");
               setDrawerMode("export");
               setMode("select");
             }}
           >
             <FaArrowDown className="rounded-md bg-secondary-foreground fill-secondary p-1" />
             {t("export")}
+          </Button>
+        )}
+        {features.includes("share-timestamp") && (
+          <Button
+            className="flex w-full items-center justify-center gap-2"
+            aria-label={t("recording.shareTimestamp.label", {
+              ns: "components/dialog",
+            })}
+            onClick={() => {
+              const initialTimestamp = Math.floor(currentTime);
+
+              setShareTimestampAtOpen(initialTimestamp);
+              setCustomShareTimestamp(initialTimestamp);
+              setSelectedShareOption("current");
+              setDrawerMode("share-timestamp");
+            }}
+          >
+            <LuShare2 className="size-5 rounded-md bg-secondary-foreground stroke-secondary p-1" />
+            {t("recording.shareTimestamp.label", {
+              ns: "components/dialog",
+            })}
           </Button>
         )}
         {features.includes("calendar") && (
@@ -191,6 +386,26 @@ export default function MobileReviewSettingsDrawer({
             {t("filter")}
           </Button>
         )}
+        {features.includes("debug-replay") && (
+          <Button
+            className="flex w-full items-center justify-center gap-2"
+            aria-label={t("title", { ns: "views/replay" })}
+            onClick={() => {
+              const now = new Date(latestTime * 1000);
+              now.setHours(now.getHours() - 1);
+              setDebugReplayRange({
+                after: now.getTime() / 1000,
+                before: latestTime,
+              });
+              setSelectedReplayOption("1");
+              setDrawerMode("debug-replay");
+              setDebugReplayMode("select");
+            }}
+          >
+            <LuBug className="size-5 rounded-md bg-secondary-foreground fill-secondary stroke-secondary p-1" />
+            {t("title", { ns: "views/replay" })}
+          </Button>
+        )}
       </div>
     );
   } else if (drawerMode == "export") {
@@ -200,19 +415,32 @@ export default function MobileReviewSettingsDrawer({
         currentTime={currentTime}
         range={range}
         name={name}
+        selectedCaseId={selectedCaseId}
+        singleNewCaseName={singleNewCaseName}
+        singleNewCaseDescription={singleNewCaseDescription}
+        activeTab={exportTab}
+        isStartingExport={isStartingExport}
         onStartExport={onStartExport}
+        setActiveTab={setExportTab}
         setName={setName}
+        setSelectedCaseId={setSelectedCaseId}
+        setSingleNewCaseName={setSingleNewCaseName}
+        setSingleNewCaseDescription={setSingleNewCaseDescription}
         setRange={setRange}
         setMode={(mode) => {
           setMode(mode);
 
-          if (mode == "timeline") {
+          if (mode == "timeline" || mode == "timeline_multi") {
             setDrawerMode("none");
           }
         }}
         onCancel={() => {
           setMode("none");
           setRange(undefined);
+          setSelectedCaseId(undefined);
+          setSingleNewCaseName("");
+          setSingleNewCaseDescription("");
+          setExportTab("export");
           setDrawerMode("select");
         }}
       />
@@ -303,16 +531,109 @@ export default function MobileReviewSettingsDrawer({
         />
       </div>
     );
+  } else if (drawerMode == "debug-replay") {
+    const handleTimeOptionChange = (
+      option: "1" | "5" | "custom" | "timeline",
+    ) => {
+      setSelectedReplayOption(option);
+
+      if (option === "custom" || option === "timeline") {
+        return;
+      }
+
+      const hours = parseInt(option);
+      const end = latestTime;
+      const now = new Date(end * 1000);
+      now.setHours(now.getHours() - hours);
+      setDebugReplayRange({ after: now.getTime() / 1000, before: end });
+    };
+
+    content = (
+      <DebugReplayContent
+        currentTime={currentTime}
+        latestTime={latestTime}
+        range={debugReplayRange}
+        selectedOption={selectedReplayOption}
+        isStarting={isDebugReplayStarting}
+        onSelectedOptionChange={handleTimeOptionChange}
+        onStart={onStartDebugReplay}
+        onCancel={() => {
+          setDebugReplayMode("none");
+          setDebugReplayRange(undefined);
+          setDrawerMode("select");
+        }}
+        setRange={setDebugReplayRange}
+        setMode={(mode) => {
+          setDebugReplayMode(mode);
+
+          if (mode == "timeline") {
+            setDrawerMode("none");
+          }
+        }}
+      />
+    );
+  } else if (drawerMode == "share-timestamp") {
+    content = (
+      <div className="w-full">
+        <div className="relative h-8 w-full">
+          <div className="absolute left-1/2 -translate-x-1/2 text-muted-foreground">
+            {t("recording.shareTimestamp.title", { ns: "components/dialog" })}
+          </div>
+        </div>
+        <ShareTimestampContent
+          currentTime={shareTimestampAtOpen}
+          selectedOption={selectedShareOption}
+          setSelectedOption={setSelectedShareOption}
+          customTimestamp={customShareTimestamp}
+          setCustomTimestamp={setCustomShareTimestamp}
+          onShareTimestamp={(timestamp) => {
+            onShareTimestamp(timestamp);
+            setDrawerMode("none");
+          }}
+          onCancel={() => setDrawerMode("select")}
+        />
+      </div>
+    );
   }
 
   return (
     <>
       <SaveExportOverlay
         className="pointer-events-none absolute left-1/2 top-8 z-50 -translate-x-1/2"
-        show={mode == "timeline"}
-        onSave={() => onStartExport()}
-        onCancel={() => setMode("none")}
+        show={mode == "timeline" || mode == "timeline_multi"}
+        hidePreview={mode == "timeline_multi"}
+        isSaving={isStartingExport}
+        saveLabel={
+          mode == "timeline_multi"
+            ? t("export.fromTimeline.useThisRange", { ns: "components/dialog" })
+            : undefined
+        }
+        onSave={() => {
+          if (mode == "timeline_multi") {
+            setExportTab("multi");
+            setDrawerMode("export");
+            setMode("select");
+            return;
+          }
+
+          void onStartExport();
+        }}
+        onCancel={() => {
+          setExportTab("export");
+          setRange(undefined);
+          setMode("none");
+        }}
         onPreview={() => setShowExportPreview(true)}
+      />
+      <SaveDebugReplayOverlay
+        className="pointer-events-none absolute left-1/2 top-8 z-50 -translate-x-1/2"
+        show={debugReplayRange != undefined && debugReplayMode == "timeline"}
+        isStarting={isDebugReplayStarting}
+        onSave={onStartDebugReplay}
+        onCancel={() => {
+          setDebugReplayMode("none");
+          setDebugReplayRange(undefined);
+        }}
       />
       <ExportPreviewDialog
         camera={camera}
@@ -321,7 +642,6 @@ export default function MobileReviewSettingsDrawer({
         setShowPreview={setShowExportPreview}
       />
       <Drawer
-        modal={!(isIOS && drawerMode == "export")}
         open={drawerMode != "none"}
         onOpenChange={(open) => {
           if (!open) {
@@ -346,7 +666,9 @@ export default function MobileReviewSettingsDrawer({
             />
           </Button>
         </DrawerTrigger>
-        <DrawerContent className="mx-1 flex max-h-[80dvh] flex-col items-center gap-2 overflow-hidden rounded-t-2xl px-4 pb-4">
+        <DrawerContent
+          className={`mx-1 flex max-h-[80dvh] flex-col items-center gap-2 rounded-t-2xl px-4 pb-4 ${drawerMode == "export" || drawerMode == "debug-replay" ? "overflow-visible" : "overflow-hidden"}`}
+        >
           {content}
         </DrawerContent>
       </Drawer>

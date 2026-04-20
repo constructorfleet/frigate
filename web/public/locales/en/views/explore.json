@@ -62,7 +62,10 @@
         "zones": "Zones",
         "ratio": "Ratio",
         "area": "Area",
-        "score": "Score"
+        "score": "Score",
+        "computedScore": "Computed Score",
+        "topScore": "Top Score",
+        "toggleAdvancedScores": "Toggle advanced scores"
       }
     },
     "annotationSettings": {
@@ -178,7 +181,8 @@
     },
     "title": {
       "label": "Title"
-    }
+    },
+    "scoreInfo": "Score Information"
   },
   "itemMenu": {
     "downloadVideo": {
@@ -225,12 +229,22 @@
     },
     "hideObjectDetails": {
       "label": "Hide object path"
+    },
+    "debugReplay": {
+      "label": "Debug replay",
+      "aria": "View this tracked object in the debug replay view"
+    },
+    "more": {
+      "aria": "More"
     }
   },
   "dialog": {
     "confirmDelete": {
       "title": "Confirm Delete",
       "desc": "Deleting this tracked object removes the snapshot, any saved embeddings, and any associated tracking details entries. Recorded footage of this tracked object in History view will <em>NOT</em> be deleted.<br /><br />Are you sure you want to proceed?"
+    },
+    "toast": {
+      "error": "Error deleting this tracked object: {{errorMessage}}"
     }
   },
   "noTrackedObjects": "No Tracked Objects Found",
@@ -253,5 +267,8 @@
   },
   "concerns": {
     "label": "Concerns"
+  },
+  "objectLifecycle": {
+    "noImageFound": "No image found for this tracked object."
   }
 }
