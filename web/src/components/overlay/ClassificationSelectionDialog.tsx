@@ -87,7 +87,7 @@ export default function ClassificationSelectionDialog({
               toast.success(t("toast.success.categorizedImage"), {
                 position: "top-center",
               });
-              onRefresh();
+              onRefresh?.();
             }
           })
           .catch((error) => {
