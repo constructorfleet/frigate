@@ -229,8 +229,6 @@ class TestCustomObjectClassificationIntegration(unittest.TestCase):
 
     def _make_processor(self, classification_type):
         """Return a processor with a live interpreter stub and pre-loaded history."""
-        from frigate.config.classification import ObjectClassificationType
-
         config = MagicMock()
         model_config = MagicMock()
         model_config.name = "test_model"
