@@ -93,7 +93,7 @@ export default function ClassificationSelectionDialog({
               toast.success(t("toast.success.categorizedImage"), {
                 position: "top-center",
               });
-              onRefresh();
+              onRefresh?.();
             }
           })
           .catch((error) => {
@@ -164,7 +164,6 @@ export default function ClassificationSelectionDialog({
     () =>
       excludeCategory ? classes.filter((c) => c !== excludeCategory) : classes,
     [classes, excludeCategory],
-  );
   );
 
   const isChildButton = useMemo(
