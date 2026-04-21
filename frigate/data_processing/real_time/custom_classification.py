@@ -580,7 +580,7 @@ class CustomObjectClassificationProcessor(DeferredRealtimeProcessorApi):
                 now,
                 resized_crop,
                 crop_bgr,
-                obj_data.get("current_zones"),
+                obj_data.get("current_zones", []),
             )
         )
 
