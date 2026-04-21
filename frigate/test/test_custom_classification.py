@@ -306,7 +306,9 @@ class TestCustomObjectClassificationIntegration(unittest.TestCase):
         self.assertTrue(results, "process_frame must produce at least one result")
         result = results[0]
         self.assertEqual(result["type"], "classification")
-        self.assertIn("zones", result, "Result must include zones when object is in zones")
+        self.assertIn(
+            "zones", result, "Result must include zones when object is in zones"
+        )
         self.assertEqual(result["zones"], ["driveway", "porch"])
         self.assertEqual(result["label"], "walking")
 
