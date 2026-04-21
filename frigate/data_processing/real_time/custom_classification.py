@@ -587,7 +587,9 @@ class CustomObjectClassificationProcessor(DeferredRealtimeProcessorApi):
     def _process_task(self, task: Any) -> None:
         kind = task[0]
         if kind == "classify":
-            _, object_id, camera, timestamp, resized_crop, crop_bgr, current_zones = task
+            _, object_id, camera, timestamp, resized_crop, crop_bgr, current_zones = (
+                task
+            )
             self._classify_object(
                 object_id, camera, timestamp, resized_crop, crop_bgr, current_zones
             )
