@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
       "frigate/updating",
       "frigate/camera_setup",
       "frigate/video_pipeline",
+      "frigate/network_requirements",
       "frigate/glossary",
     ],
     Guides: [
@@ -28,7 +29,7 @@ const sidebars: SidebarsConfig = {
         {
           type: "link",
           label: "Go2RTC Configuration Reference",
-          href: "https://github.com/AlexxIT/go2rtc/tree/v1.9.10#configuration",
+          href: "https://github.com/AlexxIT/go2rtc/tree/v1.9.13#configuration",
         } as PropSidebarItemLink,
       ],
       Detectors: [
@@ -94,6 +95,7 @@ const sidebars: SidebarsConfig = {
       "Extra Configuration": [
         "configuration/authentication",
         "configuration/notifications",
+        "configuration/profiles",
         "configuration/ffmpeg_presets",
         "configuration/pwa",
         "configuration/tls",

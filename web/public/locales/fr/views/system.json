@@ -7,7 +7,8 @@
     "logs": {
       "frigate": "Journaux de Frigate - Frigate",
       "nginx": "Journaux Nginx - Frigate",
-      "go2rtc": "Journaux Go2RTC - Frigate"
+      "go2rtc": "Journaux Go2RTC - Frigate",
+      "websocket": "Journaux des messages - Frigate"
     }
   },
   "title": "Système",
@@ -32,6 +33,33 @@
       "error": {
         "fetchingLogsFailed": "Erreur lors de la récupération des logs : {{errorMessage}}",
         "whileStreamingLogs": "Erreur lors de la diffusion des logs : {{errorMessage}}"
+      }
+    },
+    "websocket": {
+      "label": "Messages",
+      "pause": "Pause",
+      "resume": "Reprendre",
+      "clear": "Effacer",
+      "filter": {
+        "all": "Tous les sujets",
+        "topics": "Sujets",
+        "events": "Évènements",
+        "reviews": "Revues",
+        "classification": "Classification",
+        "face_recognition": "Reconnaissance Faciale",
+        "lpr": "LAPI",
+        "camera_activity": "Activités de la caméra",
+        "system": "Système",
+        "camera": "Caméra",
+        "all_cameras": "Toutes les caméras",
+        "cameras_count_one": "{{count}} Caméra",
+        "cameras_count_other": "{{count}} Caméras"
+      },
+      "empty": "Aucun message capturé jusque là",
+      "count_one": "{{count}} message",
+      "count_other": "{{count}} messages",
+      "expanded": {
+        "payload": "Charge utile"
       }
     }
   },
@@ -81,7 +109,9 @@
         "title": "Avertissement relatif aux statistiques du GPU Intel",
         "message": "Statistiques du GPU non disponibles",
         "description": "Il s'agit d'un bug connu de l'outil de statistiques GPU d'Intel (intel_gpu_top) : il peut afficher à tort une utilisation de 0 %, même lorsque l'accélération matérielle et la détection d'objets fonctionnent correctement sur l'iGPU. Ce problème ne vient pas de Frigate. Vous pouvez redémarrer l'hôte pour rétablir temporairement l'affichage et confirmer le fonctionnement du GPU. Les performances ne sont pas affectées."
-      }
+      },
+      "gpuTemperature": "Température du GPU",
+      "npuTemperature": "Température du NPU"
     },
     "otherProcesses": {
       "title": "Autres processus",
@@ -165,6 +195,17 @@
       "error": {
         "unableToProbeCamera": "Impossible d'interroger la caméra : {{errorMessage}}"
       }
+    },
+    "connectionQuality": {
+      "title": "Qualité de la connexion",
+      "excellent": "Excellente",
+      "fair": "Acceptable",
+      "poor": "Médiocre",
+      "unusable": "Inutilisable",
+      "fps": "IPS",
+      "expectedFps": "IPS attendues",
+      "reconnectsLastHour": "Reconnexions (dernière heure)",
+      "stallsLastHour": "Baisses de qualité (dernière heure)"
     }
   },
   "lastRefreshed": "Dernier rafraichissement : ",

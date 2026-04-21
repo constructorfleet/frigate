@@ -1,0 +1,81 @@
+{
+    "version": {
+        "label": "Version actuelle de la configuration",
+        "description": "Version numérique ou sous forme de chaîne de la configuration active, permettant de détecter les migrations ou les changements de format"
+    },
+    "safe_mode": {
+        "label": "Mode sans échec",
+        "description": "Si activé, Frigate démarre en mode sans échec avec des fonctionnalités réduites pour le dépannage."
+    },
+    "environment_vars": {
+        "label": "Variables d'environnement",
+        "description": "Paires clé/valeur des variables d'environnement à définir pour le processus Frigate sous Home Assistant OS. Les utilisateurs sans HAOS doivent utiliser la configuration des variables d'environnement de Docker à la place."
+    },
+    "logger": {
+        "label": "Journalisation",
+        "description": "Contrôle la verbosité par défaut des journaux et les exceptions de niveau par composant.",
+        "default": {
+            "label": "Niveau de journalisation",
+            "description": "Verbosité de l'ensemble des journaux par défaut (débogage, information, avertissement, erreur)."
+        },
+        "logs": {
+            "label": "Niveau de journalisation par processus",
+            "description": "Personnaliser le niveau de journalisation par composant pour augmenter ou diminuer la verbosité pour des modules spécifiques."
+        }
+    },
+    "auth": {
+        "label": "Authentification",
+        "enabled": {
+            "label": "Activer l'authentification",
+            "description": "Active l'authentification native de l'interface de Frigate."
+        },
+        "description": "Paramètres d'authentification et de session, y compris les options relatives aux cookies et à la limitation du débit.",
+        "reset_admin_password": {
+            "label": "réinitialiser le mot de passe administrateur",
+            "description": "Si vrai, réinitialise le mot de passe utilisateur administrateur au démarrage et écrit le nouveau mot de passe dans les journaux."
+        },
+        "cookie_name": {
+            "label": "Nom du cookie JWT",
+            "description": "Nom du cookie utilisé pour stocker le jeton JWT pour authentification native."
+        },
+        "cookie_secure": {
+            "label": "Drapeau du cookie sécurisé",
+            "description": "Active le drapeau sécurisé sur le cookie d'authentification ; Doit être activé quand le TLS est utilisé."
+        },
+        "session_length": {
+            "label": "Longueur de session",
+            "description": "Durée de session en secondes pour les sessions basé sur JWT."
+        },
+        "refresh_time": {
+            "label": "Fenêtre de rafraichissement de session",
+            "description": "Lorsqu'une session est à moins de ce nombre de secondes d'expirer, rétablissez-la à sa durée entière."
+        },
+        "failed_login_rate_limit": {
+            "label": "Limite de connexions échouées",
+            "description": "Règles limitant la fréquence des tentatives ratées d'authentification afin de réduire les attaques de type \"brute-force\"."
+        },
+        "trusted_proxies": {
+            "label": "Mandataire de confiance",
+            "description": "Liste des IP de mandataire de confiance quand il faut déterminer l'IP pour limiter le taux."
+        },
+        "hash_iterations": {
+            "label": "Itérations de hachage",
+            "description": "Nombre d'itérations PBKDF2-SHA256 à utiliser quand les mots de passe utilisateur sont hachés."
+        },
+        "roles": {
+            "label": "Correspondance des rôles",
+            "description": "Correspondance de rôles vers la liste des caméras. Une liste vide donne l'accès totale à toutes les caméras pour ce rôle."
+        },
+        "admin_first_time_login": {
+            "label": "Drapeau admin première fois",
+            "description": "Si activé, l'interface peut afficher un lien d'aide sur la page d'identification des utilisateurs indiquant comment se connecter après une réinitialisation du mot de passe administrateur. "
+        }
+    },
+    "database": {
+        "label": "Base de donnée",
+        "description": "Réglages concernant la base de donnée SQLite utilisé par Frigate pour stocker les objets suivis et enregistrer les métadonnées.",
+        "path": {
+            "label": "Chemin vers la base de donnée"
+        }
+    }
+}

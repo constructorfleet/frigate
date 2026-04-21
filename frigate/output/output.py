@@ -15,6 +15,7 @@ from ws4py.server.wsgirefserver import (
 )
 from ws4py.server.wsgiutils import WebSocketWSGIApplication
 
+from frigate.comms.config_updater import ConfigSubscriber
 from frigate.comms.detections_updater import DetectionSubscriber, DetectionTypeEnum
 from frigate.comms.ws import WebSocket
 from frigate.config import FrigateConfig
@@ -22,7 +23,12 @@ from frigate.config.camera.updater import (
     CameraConfigUpdateEnum,
     CameraConfigUpdateSubscriber,
 )
-from frigate.const import CACHE_DIR, CLIPS_DIR, PROCESS_PRIORITY_MED
+from frigate.const import (
+    CACHE_DIR,
+    CLIPS_DIR,
+    PROCESS_PRIORITY_MED,
+    REPLAY_CAMERA_PREFIX,
+)
 from frigate.output.birdseye import Birdseye
 from frigate.output.camera import JsmpegCamera
 from frigate.output.preview import PreviewRecorder
@@ -55,6 +61,12 @@ def check_disabled_camera_update(
             # last camera update was more than 1 second ago
             # need to send empty data to birdseye because current
             # frame is now out of date
+            cam_width = config.cameras[camera].detect.width
+            cam_height = config.cameras[camera].detect.height
+
+            if cam_width is None or cam_height is None:
+                raise ValueError(f"Camera {camera} detect dimensions not configured")
+
             if birdseye and offline_time < 10:
                 # we only need to send blank frames to birdseye at the beginning of a camera being offline
                 birdseye.write_data(
@@ -62,10 +74,7 @@ def check_disabled_camera_update(
                     [],
                     [],
                     now,
-                    get_blank_yuv_frame(
-                        config.cameras[camera].detect.width,
-                        config.cameras[camera].detect.height,
-                    ),
+                    get_blank_yuv_frame(cam_width, cam_height),
                 )
 
     if not has_enabled_camera and birdseye:
@@ -78,6 +87,32 @@ class OutputProcess(FrigateProcess):
             stop_event, PROCESS_PRIORITY_MED, name="frigate.output", daemon=True
         )
         self.config = config
+
+    def is_debug_replay_camera(self, camera: str) -> bool:
+        return camera.startswith(REPLAY_CAMERA_PREFIX)
+
+    def add_camera(
+        self,
+        camera: str,
+        websocket_server: WSGIServer,
+        jsmpeg_cameras: dict[str, JsmpegCamera],
+        preview_recorders: dict[str, PreviewRecorder],
+        preview_write_times: dict[str, float],
+        birdseye: Birdseye | None,
+    ) -> None:
+        camera_config = self.config.cameras[camera]
+        jsmpeg_cameras[camera] = JsmpegCamera(
+            camera_config, self.stop_event, websocket_server
+        )
+        preview_recorders[camera] = PreviewRecorder(camera_config)
+        preview_write_times[camera] = 0
+
+        if (
+            birdseye is not None
+            and self.config.birdseye.enabled
+            and camera_config.birdseye.enabled
+        ):
+            birdseye.add_camera(camera)
 
     def run(self) -> None:
         self.pre_run_setup(self.config.logger)
@@ -107,6 +142,7 @@ class OutputProcess(FrigateProcess):
                 CameraConfigUpdateEnum.record,
             ],
         )
+        birdseye_config_subscriber = ConfigSubscriber("config/birdseye", exact=True)
 
         jsmpeg_cameras: dict[str, JsmpegCamera] = {}
         birdseye: Birdseye | None = None
@@ -118,14 +154,17 @@ class OutputProcess(FrigateProcess):
         move_preview_frames("cache")
 
         for camera, cam_config in self.config.cameras.items():
-            if not cam_config.enabled_in_config:
+            if not cam_config.enabled_in_config or self.is_debug_replay_camera(camera):
                 continue
 
-            jsmpeg_cameras[camera] = JsmpegCamera(
-                cam_config, self.stop_event, websocket_server
+            self.add_camera(
+                camera,
+                websocket_server,
+                jsmpeg_cameras,
+                preview_recorders,
+                preview_write_times,
+                birdseye,
             )
-            preview_recorders[camera] = PreviewRecorder(cam_config)
-            preview_write_times[camera] = 0
 
         if self.config.birdseye.enabled:
             birdseye = Birdseye(self.config, self.stop_event, websocket_server)
@@ -133,26 +172,39 @@ class OutputProcess(FrigateProcess):
         websocket_thread.start()
 
         while not self.stop_event.is_set():
+            update_topic, birdseye_config = (
+                birdseye_config_subscriber.check_for_update()
+            )
+
+            if update_topic is not None and birdseye_config is not None:
+                previous_global_mode = self.config.birdseye.mode
+                self.config.birdseye = birdseye_config
+
+                for camera_config in self.config.cameras.values():
+                    if camera_config.birdseye.mode == previous_global_mode:
+                        camera_config.birdseye.mode = birdseye_config.mode
+
+                logger.debug("Applied dynamic birdseye config update")
+
             # check if there is an updated config
             updates = config_subscriber.check_for_updates()
 
             if CameraConfigUpdateEnum.add in updates:
                 for camera in updates["add"]:
-                    jsmpeg_cameras[camera] = JsmpegCamera(
-                        self.config.cameras[camera], self.stop_event, websocket_server
-                    )
-                    preview_recorders[camera] = PreviewRecorder(
-                        self.config.cameras[camera]
-                    )
-                    preview_write_times[camera] = 0
+                    if not self.is_debug_replay_camera(camera):
+                        self.add_camera(
+                            camera,
+                            websocket_server,
+                            jsmpeg_cameras,
+                            preview_recorders,
+                            preview_write_times,
+                            birdseye,
+                        )
 
-                    if (
-                        self.config.birdseye.enabled
-                        and self.config.cameras[camera].birdseye.enabled
-                    ):
-                        birdseye.add_camera(camera)
-
-            (topic, data) = detection_subscriber.check_for_update(timeout=1)
+            _result = detection_subscriber.check_for_update(timeout=1)
+            if _result is None:
+                continue
+            (topic, data) = _result
             now = datetime.datetime.now().timestamp()
 
             if now - last_disabled_cam_check > 5:
@@ -162,7 +214,7 @@ class OutputProcess(FrigateProcess):
                     self.config, birdseye, preview_recorders, preview_write_times
                 )
 
-            if not topic:
+            if not topic or data is None:
                 continue
 
             (
@@ -174,7 +226,11 @@ class OutputProcess(FrigateProcess):
                 _,
             ) = data
 
-            if not self.config.cameras[camera].enabled:
+            if (
+                camera not in self.config.cameras
+                or not self.config.cameras[camera].enabled
+                or self.is_debug_replay_camera(camera)
+            ):
                 continue
 
             frame = frame_manager.get(
@@ -212,11 +268,15 @@ class OutputProcess(FrigateProcess):
                 jsmpeg_cameras[camera].write_frame(frame.tobytes())
 
             # send output data to birdseye if websocket is connected or restreaming
-            if self.config.birdseye.enabled and (
-                self.config.birdseye.restream
-                or any(
-                    ws.environ["PATH_INFO"].endswith("birdseye")
-                    for ws in websocket_server.manager
+            if (
+                self.config.birdseye.enabled
+                and birdseye is not None
+                and (
+                    self.config.birdseye.restream
+                    or any(
+                        ws.environ["PATH_INFO"].endswith("birdseye")
+                        for ws in websocket_server.manager
+                    )
                 )
             ):
                 birdseye.write_data(
@@ -232,9 +292,12 @@ class OutputProcess(FrigateProcess):
         move_preview_frames("clips")
 
         while True:
-            (topic, data) = detection_subscriber.check_for_update(timeout=0)
+            _cleanup_result = detection_subscriber.check_for_update(timeout=0)
+            if _cleanup_result is None:
+                break
+            (topic, data) = _cleanup_result
 
-            if not topic:
+            if not topic or data is None:
                 break
 
             (
@@ -263,6 +326,7 @@ class OutputProcess(FrigateProcess):
             birdseye.stop()
 
         config_subscriber.stop()
+        birdseye_config_subscriber.stop()
         websocket_server.manager.close_all()
         websocket_server.manager.stop()
         websocket_server.manager.join()
@@ -271,7 +335,7 @@ class OutputProcess(FrigateProcess):
         logger.info("exiting output process...")
 
 
-def move_preview_frames(loc: str):
+def move_preview_frames(loc: str) -> None:
     preview_holdover = os.path.join(CLIPS_DIR, "preview_restart_cache")
     preview_cache = os.path.join(CACHE_DIR, "preview_frames")
 

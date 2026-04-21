@@ -1,8 +1,9 @@
 """OpenAI Provider for Frigate AI."""
 
 import base64
+import json
 import logging
-from typing import Optional
+from typing import Any, AsyncGenerator, Optional
 
 from httpx import TimeoutException
 from openai import OpenAI
@@ -20,7 +21,7 @@ class OpenAIClient(GenAIClient):
     provider: OpenAI
     context_size: Optional[int] = None
 
-    def _init_provider(self):
+    def _init_provider(self) -> OpenAI:
         """Initialize the client."""
         # Extract context_size from provider_options as it's not a valid OpenAI client parameter
         # It will be used in get_context_size() instead
@@ -29,12 +30,26 @@ class OpenAIClient(GenAIClient):
             for k, v in self.genai_config.provider_options.items()
             if k != "context_size"
         }
+
+        if self.genai_config.base_url:
+            provider_opts["base_url"] = self.genai_config.base_url
+
         return OpenAI(api_key=self.genai_config.api_key, **provider_opts)
 
-    def _send(self, prompt: str, images: list[bytes]) -> Optional[str]:
+    def _send(
+        self,
+        prompt: str,
+        images: list[bytes],
+        response_format: Optional[dict] = None,
+    ) -> Optional[str]:
         """Submit a request to OpenAI."""
         encoded_images = [base64.b64encode(image).decode("utf-8") for image in images]
-        messages_content = []
+        messages_content: list[dict] = [
+            {
+                "type": "text",
+                "text": prompt,
+            }
+        ]
         for image in encoded_images:
             messages_content.append(
                 {
@@ -45,34 +60,39 @@ class OpenAIClient(GenAIClient):
                     },
                 }
             )
-        messages_content.append(
-            {
-                "type": "text",
-                "text": prompt,
-            }
-        )
         try:
-            result = self.provider.chat.completions.create(
-                model=self.genai_config.model,
-                messages=[
+            request_params = {
+                "model": self.genai_config.model,
+                "messages": [
                     {
                         "role": "user",
                         "content": messages_content,
                     },
                 ],
-                timeout=self.timeout,
+                "timeout": self.timeout,
                 **self.genai_config.runtime_options,
-            )
+            }
+            if response_format:
+                request_params["response_format"] = response_format
+            result = self.provider.chat.completions.create(**request_params)
             if (
                 result is not None
                 and hasattr(result, "choices")
                 and len(result.choices) > 0
             ):
-                return result.choices[0].message.content.strip()
+                return str(result.choices[0].message.content.strip())
             return None
         except (TimeoutException, Exception) as e:
             logger.warning("OpenAI returned an error: %s", str(e))
             return None
+
+    def list_models(self) -> list[str]:
+        """Return available model IDs from the OpenAI-compatible API."""
+        try:
+            return sorted(m.id for m in self.provider.models.list().data)
+        except Exception as e:
+            logger.warning("Failed to list OpenAI models: %s", e)
+            return []
 
     def get_context_size(self) -> int:
         """Get the context window size for OpenAI."""
@@ -116,3 +136,252 @@ class OpenAIClient(GenAIClient):
             f"Using default context size {self.context_size} for model {self.genai_config.model}"
         )
         return self.context_size
+
+    def chat_with_tools(
+        self,
+        messages: list[dict[str, Any]],
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Optional[str] = "auto",
+    ) -> dict[str, Any]:
+        """
+        Send chat messages to OpenAI with optional tool definitions.
+
+        Implements function calling/tool usage for OpenAI models.
+        """
+        try:
+            openai_tool_choice = None
+            if tool_choice:
+                if tool_choice == "none":
+                    openai_tool_choice = "none"
+                elif tool_choice == "auto":
+                    openai_tool_choice = "auto"
+                elif tool_choice == "required":
+                    openai_tool_choice = "required"
+
+            request_params = {
+                "model": self.genai_config.model,
+                "messages": messages,
+                "timeout": self.timeout,
+            }
+
+            if tools:
+                request_params["tools"] = tools
+                if openai_tool_choice is not None:
+                    request_params["tool_choice"] = openai_tool_choice
+
+            if isinstance(self.genai_config.provider_options, dict):
+                excluded_options = {"context_size"}
+                provider_opts = {
+                    k: v
+                    for k, v in self.genai_config.provider_options.items()
+                    if k not in excluded_options
+                }
+                request_params.update(provider_opts)
+
+            result = self.provider.chat.completions.create(**request_params)  # type: ignore[call-overload]
+
+            if (
+                result is None
+                or not hasattr(result, "choices")
+                or len(result.choices) == 0
+            ):
+                return {
+                    "content": None,
+                    "tool_calls": None,
+                    "finish_reason": "error",
+                }
+
+            choice = result.choices[0]
+            message = choice.message
+            content = message.content.strip() if message.content else None
+
+            tool_calls = None
+            if message.tool_calls:
+                tool_calls = []
+                for tool_call in message.tool_calls:
+                    try:
+                        arguments = json.loads(tool_call.function.arguments)
+                    except (json.JSONDecodeError, AttributeError) as e:
+                        logger.warning(
+                            f"Failed to parse tool call arguments: {e}, "
+                            f"tool: {tool_call.function.name if hasattr(tool_call.function, 'name') else 'unknown'}"
+                        )
+                        arguments = {}
+
+                    tool_calls.append(
+                        {
+                            "id": tool_call.id if hasattr(tool_call, "id") else "",
+                            "name": tool_call.function.name
+                            if hasattr(tool_call.function, "name")
+                            else "",
+                            "arguments": arguments,
+                        }
+                    )
+
+            finish_reason = "error"
+            if hasattr(choice, "finish_reason") and choice.finish_reason:
+                finish_reason = choice.finish_reason
+            elif tool_calls:
+                finish_reason = "tool_calls"
+            elif content:
+                finish_reason = "stop"
+
+            return {
+                "content": content,
+                "tool_calls": tool_calls,
+                "finish_reason": finish_reason,
+            }
+
+        except TimeoutException as e:
+            logger.warning("OpenAI request timed out: %s", str(e))
+            return {
+                "content": None,
+                "tool_calls": None,
+                "finish_reason": "error",
+            }
+        except Exception as e:
+            logger.warning("OpenAI returned an error: %s", str(e))
+            return {
+                "content": None,
+                "tool_calls": None,
+                "finish_reason": "error",
+            }
+
+    async def chat_with_tools_stream(
+        self,
+        messages: list[dict[str, Any]],
+        tools: Optional[list[dict[str, Any]]] = None,
+        tool_choice: Optional[str] = "auto",
+    ) -> AsyncGenerator[tuple[str, Any], None]:
+        """
+        Stream chat with tools; yields content deltas then final message.
+
+        Implements streaming function calling/tool usage for OpenAI models.
+        """
+        try:
+            openai_tool_choice = None
+            if tool_choice:
+                if tool_choice == "none":
+                    openai_tool_choice = "none"
+                elif tool_choice == "auto":
+                    openai_tool_choice = "auto"
+                elif tool_choice == "required":
+                    openai_tool_choice = "required"
+
+            request_params = {
+                "model": self.genai_config.model,
+                "messages": messages,
+                "timeout": self.timeout,
+                "stream": True,
+            }
+
+            if tools:
+                request_params["tools"] = tools
+                if openai_tool_choice is not None:
+                    request_params["tool_choice"] = openai_tool_choice
+
+            if isinstance(self.genai_config.provider_options, dict):
+                excluded_options = {"context_size"}
+                provider_opts = {
+                    k: v
+                    for k, v in self.genai_config.provider_options.items()
+                    if k not in excluded_options
+                }
+                request_params.update(provider_opts)
+
+            # Use streaming API
+            content_parts: list[str] = []
+            tool_calls_by_index: dict[int, dict[str, Any]] = {}
+            finish_reason = "stop"
+
+            stream = self.provider.chat.completions.create(**request_params)  # type: ignore[call-overload]
+
+            for chunk in stream:
+                if not chunk or not chunk.choices:
+                    continue
+
+                choice = chunk.choices[0]
+                delta = choice.delta
+
+                # Check for finish reason
+                if choice.finish_reason:
+                    finish_reason = choice.finish_reason
+
+                # Extract content deltas
+                if delta.content:
+                    content_parts.append(delta.content)
+                    yield ("content_delta", delta.content)
+
+                # Extract tool calls
+                if delta.tool_calls:
+                    for tc in delta.tool_calls:
+                        idx = tc.index
+                        fn = tc.function
+
+                        if idx not in tool_calls_by_index:
+                            tool_calls_by_index[idx] = {
+                                "id": tc.id or "",
+                                "name": fn.name if fn and fn.name else "",
+                                "arguments": "",
+                            }
+
+                        t = tool_calls_by_index[idx]
+                        if tc.id:
+                            t["id"] = tc.id
+                        if fn and fn.name:
+                            t["name"] = fn.name
+                        if fn and fn.arguments:
+                            t["arguments"] += fn.arguments
+
+            # Build final message
+            full_content = "".join(content_parts).strip() or None
+
+            # Convert tool calls to list format
+            tool_calls_list = None
+            if tool_calls_by_index:
+                tool_calls_list = []
+                for tc in tool_calls_by_index.values():
+                    try:
+                        # Parse accumulated arguments as JSON
+                        parsed_args = json.loads(tc["arguments"])
+                    except (json.JSONDecodeError, Exception):
+                        parsed_args = tc["arguments"]
+
+                    tool_calls_list.append(
+                        {
+                            "id": tc["id"],
+                            "name": tc["name"],
+                            "arguments": parsed_args,
+                        }
+                    )
+                finish_reason = "tool_calls"
+
+            yield (
+                "message",
+                {
+                    "content": full_content,
+                    "tool_calls": tool_calls_list,
+                    "finish_reason": finish_reason,
+                },
+            )
+
+        except TimeoutException as e:
+            logger.warning("OpenAI streaming request timed out: %s", str(e))
+            yield (
+                "message",
+                {
+                    "content": None,
+                    "tool_calls": None,
+                    "finish_reason": "error",
+                },
+            )
+        except Exception as e:
+            logger.warning("OpenAI streaming returned an error: %s", str(e))
+            yield (
+                "message",
+                {
+                    "content": None,
+                    "tool_calls": None,
+                    "finish_reason": "error",
+                },
+            )

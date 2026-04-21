@@ -50,11 +50,13 @@ class SegmentInfo:
         active_object_count: int,
         region_count: int,
         average_dBFS: int,
+        motion_heatmap: dict[str, int] | None = None,
     ) -> None:
         self.motion_count = motion_count
         self.active_object_count = active_object_count
         self.region_count = region_count
         self.average_dBFS = average_dBFS
+        self.motion_heatmap = motion_heatmap
 
     def should_discard_segment(self, retain_mode: RetainModeEnum) -> bool:
         keep = False
@@ -264,7 +266,7 @@ class RecordingMaintainer(threading.Thread):
 
             # get all reviews with the end time after the start of the oldest cache file
             # or with end_time None
-            reviews: ReviewSegment = (
+            reviews = (
                 ReviewSegment.select(
                     ReviewSegment.start_time,
                     ReviewSegment.end_time,
@@ -287,18 +289,21 @@ class RecordingMaintainer(threading.Thread):
             )
 
             # publish most recently available recording time and None if disabled
+            camera_cfg = self.config.cameras.get(camera)
             self.recordings_publisher.publish(
                 (
                     camera,
                     recordings[0]["start_time"].timestamp()
-                    if self.config.cameras[camera].record.enabled
+                    if camera_cfg and camera_cfg.record.enabled
                     else None,
                     None,
                 ),
                 RecordingsDataTypeEnum.saved.value,
             )
 
-        recordings_to_insert: list[Optional[Recordings]] = await asyncio.gather(*tasks)
+        recordings_to_insert: list[Optional[dict[str, Any]]] = await asyncio.gather(
+            *tasks
+        )
 
         # fire and forget recordings entries
         self.requestor.send_data(
@@ -311,13 +316,12 @@ class RecordingMaintainer(threading.Thread):
         self.end_time_cache.pop(cache_path, None)
 
     async def validate_and_move_segment(
-        self, camera: str, reviews: list[ReviewSegment], recording: dict[str, Any]
-    ) -> Optional[Recordings]:
+        self, camera: str, reviews: Any, recording: dict[str, Any]
+    ) -> Optional[dict[str, Any]]:
         cache_path: str = recording["cache_path"]
         start_time: datetime.datetime = recording["start_time"]
-        record_config = self.config.cameras[camera].record
 
-        # Just delete files if recordings are turned off
+        # Just delete files if camera removed or recordings are turned off
         if (
             camera not in self.config.cameras
             or not self.config.cameras[camera].record.enabled
@@ -368,6 +372,7 @@ class RecordingMaintainer(threading.Thread):
             )
 
         record_config = self.config.cameras[camera].record
+        segment_stats: SegmentInfo | None = None
         highest = None
 
         if record_config.continuous.days > 0:
@@ -397,9 +402,19 @@ class RecordingMaintainer(threading.Thread):
                     if highest == "continuous"
                     else RetainModeEnum.motion
                 )
-                return await self.move_segment(
-                    camera, start_time, end_time, duration, cache_path, record_mode
-                )
+                segment_stats = self.segment_stats(camera, start_time, end_time)
+
+                # Here we only check if we should move the segment based on non-object recording retention
+                # we will always want to check for overlapping review items below before dropping the segment
+                if not segment_stats.should_discard_segment(record_mode):
+                    return await self.move_segment(
+                        camera,
+                        start_time,
+                        end_time,
+                        duration,
+                        cache_path,
+                        segment_stats,
+                    )
 
         # we fell through the continuous / motion check, so we need to check the review items
         # if the cached segment overlaps with the review items:
@@ -431,19 +446,30 @@ class RecordingMaintainer(threading.Thread):
                 if review.severity == "alert"
                 else record_config.detections.retain.mode
             )
-            # move from cache to recordings immediately
-            return await self.move_segment(
-                camera,
-                start_time,
-                end_time,
-                duration,
-                cache_path,
-                record_mode,
-            )
-        # if it doesn't overlap with an review item, go ahead and drop the segment
-        # if it ends more than the configured pre_capture for the camera
-        # BUT only if continuous/motion is NOT enabled (otherwise wait for processing)
-        elif highest is None:
+
+            if segment_stats is None:
+                segment_stats = self.segment_stats(camera, start_time, end_time)
+
+            if not segment_stats.should_discard_segment(record_mode):
+                # move from cache to recordings immediately
+                return await self.move_segment(
+                    camera,
+                    start_time,
+                    end_time,
+                    duration,
+                    cache_path,
+                    segment_stats,
+                )
+            else:
+                self.drop_segment(cache_path)
+                return None
+
+        # if it doesn't overlap with a review item, drop the segment once it
+        # ends more than event_pre_capture before the most recently processed
+        # frame. at this point we've already decided not to keep it for
+        # continuous/motion retention (either disabled or segment_stats said
+        # discard), so waiting longer just fills the cache.
+        else:
             camera_info = self.object_recordings_info[camera]
             most_recently_processed_frame_time = (
                 camera_info[-1][0] if len(camera_info) > 0 else 0
@@ -451,8 +477,64 @@ class RecordingMaintainer(threading.Thread):
             retain_cutoff = datetime.datetime.fromtimestamp(
                 most_recently_processed_frame_time - record_config.event_pre_capture
             ).astimezone(datetime.timezone.utc)
+
             if end_time < retain_cutoff:
                 self.drop_segment(cache_path)
+
+        return None
+
+    def _compute_motion_heatmap(
+        self, camera: str, motion_boxes: list[tuple[int, int, int, int]]
+    ) -> dict[str, int] | None:
+        """Compute a 16x16 motion intensity heatmap from motion boxes.
+
+        Returns a sparse dict mapping cell index (as string) to intensity (1-255).
+        Only cells with motion are included.
+
+        Args:
+            camera: Camera name to get detect dimensions from.
+            motion_boxes: List of (x1, y1, x2, y2) pixel coordinates.
+
+        Returns:
+            Sparse dict like {"45": 3, "46": 5}, or None if no boxes.
+        """
+        if not motion_boxes:
+            return None
+
+        camera_config = self.config.cameras.get(camera)
+        if not camera_config:
+            return None
+
+        frame_width = camera_config.detect.width
+        frame_height = camera_config.detect.height
+
+        if not frame_width or frame_width <= 0 or not frame_height or frame_height <= 0:
+            return None
+
+        GRID_SIZE = 16
+        counts: dict[int, int] = {}
+
+        for box in motion_boxes:
+            if len(box) < 4:
+                continue
+            x1, y1, x2, y2 = box
+
+            # Convert pixel coordinates to grid cells
+            grid_x1 = max(0, int((x1 / frame_width) * GRID_SIZE))
+            grid_y1 = max(0, int((y1 / frame_height) * GRID_SIZE))
+            grid_x2 = min(GRID_SIZE - 1, int((x2 / frame_width) * GRID_SIZE))
+            grid_y2 = min(GRID_SIZE - 1, int((y2 / frame_height) * GRID_SIZE))
+
+            for y in range(grid_y1, grid_y2 + 1):
+                for x in range(grid_x1, grid_x2 + 1):
+                    idx = y * GRID_SIZE + x
+                    counts[idx] = min(255, counts.get(idx, 0) + 1)
+
+        if not counts:
+            return None
+
+        # Convert to string keys for JSON storage
+        return {str(k): v for k, v in counts.items()}
 
     def segment_stats(
         self, camera: str, start_time: datetime.datetime, end_time: datetime.datetime
@@ -461,6 +543,8 @@ class RecordingMaintainer(threading.Thread):
         active_count = 0
         region_count = 0
         motion_count = 0
+        all_motion_boxes: list[tuple[int, int, int, int]] = []
+
         for frame in self.object_recordings_info[camera]:
             # frame is after end time of segment
             if frame[0] > end_time.timestamp():
@@ -479,6 +563,8 @@ class RecordingMaintainer(threading.Thread):
             )
             motion_count += len(frame[2])
             region_count += len(frame[3])
+            # Collect motion boxes for heatmap computation
+            all_motion_boxes.extend(frame[2])
 
         audio_values = []
         for frame in self.audio_recordings_info[camera]:
@@ -498,8 +584,14 @@ class RecordingMaintainer(threading.Thread):
 
         average_dBFS = 0 if not audio_values else np.average(audio_values)
 
+        motion_heatmap = self._compute_motion_heatmap(camera, all_motion_boxes)
+
         return SegmentInfo(
-            motion_count, active_count, region_count, round(average_dBFS)
+            motion_count,
+            active_count,
+            region_count,
+            round(average_dBFS),
+            motion_heatmap,
         )
 
     async def move_segment(
@@ -509,15 +601,8 @@ class RecordingMaintainer(threading.Thread):
         end_time: datetime.datetime,
         duration: float,
         cache_path: str,
-        store_mode: RetainModeEnum,
-    ) -> Optional[Recordings]:
-        segment_info = self.segment_stats(camera, start_time, end_time)
-
-        # check if the segment shouldn't be stored
-        if segment_info.should_discard_segment(store_mode):
-            self.drop_segment(cache_path)
-            return
-
+        segment_info: SegmentInfo,
+    ) -> Optional[dict[str, Any]]:
         # directory will be in utc due to start_time being in utc
         directory = os.path.join(
             RECORD_DIR,
@@ -555,7 +640,8 @@ class RecordingMaintainer(threading.Thread):
 
                 if p.returncode != 0:
                     logger.error(f"Unable to convert {cache_path} to {file_path}")
-                    logger.error((await p.stderr.read()).decode("ascii"))
+                    if p.stderr:
+                        logger.error((await p.stderr.read()).decode("ascii"))
                     return None
                 else:
                     logger.debug(
@@ -590,6 +676,7 @@ class RecordingMaintainer(threading.Thread):
                     Recordings.regions.name: segment_info.region_count,
                     Recordings.dBFS.name: segment_info.average_dBFS,
                     Recordings.segment_size.name: segment_size,
+                    Recordings.motion_heatmap.name: segment_info.motion_heatmap,
                 }
         except Exception as e:
             logger.error(f"Unable to store recording segment {cache_path}")
@@ -618,11 +705,16 @@ class RecordingMaintainer(threading.Thread):
             stale_frame_count_threshold = 10
             # empty the object recordings info queue
             while True:
-                (topic, data) = self.detection_subscriber.check_for_update(
+                result = self.detection_subscriber.check_for_update(
                     timeout=FAST_QUEUE_TIMEOUT
                 )
 
-                if not topic:
+                if not result:
+                    break
+
+                topic, data = result
+
+                if not topic or not data:
                     break
 
                 if topic == DetectionTypeEnum.video.value:
@@ -661,7 +753,8 @@ class RecordingMaintainer(threading.Thread):
                             )
                         )
                 elif (
-                    topic == DetectionTypeEnum.api.value or DetectionTypeEnum.lpr.value
+                    topic == DetectionTypeEnum.api.value
+                    or topic == DetectionTypeEnum.lpr.value
                 ):
                     continue
 

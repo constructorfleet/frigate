@@ -106,7 +106,10 @@
       "logout": "Tanca la sessió",
       "current": "Usuari actual: {{user}}"
     },
-    "classification": "Classificació"
+    "classification": "Classificació",
+    "chat": "Xat",
+    "actions": "Accions",
+    "profiles": "Perfils"
   },
   "pagination": {
     "previous": {
@@ -268,7 +271,19 @@
     "unselect": "Desseleccionar",
     "enable": "Habilitar",
     "enabled": "Habilitat",
-    "continue": "Continua"
+    "continue": "Continua",
+    "add": "Afegeix",
+    "undo": "Desfés",
+    "copiedToClipboard": "S'ha copiat al porta-retalls",
+    "modified": "Modificat",
+    "overridden": "Sobreescrit",
+    "resetToGlobal": "Restableix a global",
+    "resetToDefault": "Restableix al valor predeterminat",
+    "saveAll": "Desa-ho tot",
+    "savingAll": "S'està desant tot…",
+    "undoAll": "Desfés-ho tot",
+    "applying": "S'està aplicant…",
+    "retry": "Torna a intentar"
   },
   "toast": {
     "copyUrlToClipboard": "URL copiada al porta-retalls.",
@@ -277,7 +292,8 @@
       "error": {
         "title": "No s'han pogut guardar els canvis de configuració: {{errorMessage}}",
         "noMessage": "No s'han pogut guardar els canvis de configuració"
-      }
+      },
+      "success": "S'han desat correctament els canvis de configuració."
     }
   },
   "accessDenied": {
@@ -303,5 +319,7 @@
   "field": {
     "optional": "Opcional",
     "internalID": "L'ID intern que Frigate s'utilitza a la configuració i a la base de dades"
-  }
+  },
+  "no_items": "Sense elements",
+  "validation_errors": "Errors de validació"
 }

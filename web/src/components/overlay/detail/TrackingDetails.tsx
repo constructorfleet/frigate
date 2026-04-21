@@ -1,13 +1,20 @@
 import useSWR from "swr";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useResizeObserver } from "@/hooks/resize-observer";
+import { useFullscreen } from "@/hooks/use-fullscreen";
 import { Event } from "@/types/event";
 import ActivityIndicator from "@/components/indicators/activity-indicator";
 import { TrackingDetailsSequence } from "@/types/timeline";
 import { FrigateConfig } from "@/types/frigateConfig";
 import { formatUnixTimestampToDateTime } from "@/utils/dateUtil";
+import { use24HourTime } from "@/hooks/use-date-utils";
 import { getIconForLabel } from "@/utils/iconUtil";
-import { LuCircle, LuFolderX } from "react-icons/lu";
+import {
+  LuChevronDown,
+  LuChevronRight,
+  LuCircle,
+  LuFolderX,
+} from "react-icons/lu";
 import { cn } from "@/lib/utils";
 import HlsVideoPlayer from "@/components/player/HlsVideoPlayer";
 import { baseUrl } from "@/api/baseUrl";
@@ -40,18 +47,21 @@ import ImageLoadingIndicator from "@/components/indicators/ImageLoadingIndicator
 import ObjectTrackOverlay from "../ObjectTrackOverlay";
 import { useIsAdmin } from "@/hooks/use-is-admin";
 import { VideoResolutionType } from "@/types/live";
+import { VodManifest } from "@/types/playback";
 
 type TrackingDetailsProps = {
   className?: string;
   event: Event;
   fullscreen?: boolean;
   tabs?: React.ReactNode;
+  isAnnotationSettingsOpen?: boolean;
 };
 
 export function TrackingDetails({
   className,
   event,
   tabs,
+  isAnnotationSettingsOpen = false,
 }: TrackingDetailsProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const { t } = useTranslation(["views/explore"]);
@@ -67,6 +77,14 @@ export function TrackingDetails({
   // manualOverride holds a record-stream timestamp explicitly chosen by the
   // user (eg, clicking a lifecycle row). When null we display `currentTime`.
   const [manualOverride, setManualOverride] = useState<number | null>(null);
+
+  // Capture the annotation offset used for building the video source URL.
+  // This only updates when the event changes, NOT on every slider drag,
+  // so the HLS player doesn't reload while the user is adjusting the offset.
+  const sourceOffsetRef = useRef(annotationOffset);
+  useEffect(() => {
+    sourceOffsetRef.current = annotationOffset;
+  }, [event.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // event.start_time is detect time, convert to record, then subtract padding
   const [currentTime, setCurrentTime] = useState(
@@ -89,14 +107,19 @@ export function TrackingDetails({
 
   const { data: config } = useSWR<FrigateConfig>("config");
 
-  // Fetch recording segments for the event's time range to handle motion-only gaps
+  // Fetch recording segments for the event's time range to handle motion-only gaps.
+  // Use the source offset (stable per event) so recordings don't refetch on every
+  // slider drag while adjusting annotation offset.
   const eventStartRecord = useMemo(
-    () => (event.start_time ?? 0) + annotationOffset / 1000,
-    [event.start_time, annotationOffset],
+    () => (event.start_time ?? 0) + sourceOffsetRef.current / 1000,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [event.start_time, event.id],
   );
   const eventEndRecord = useMemo(
-    () => (event.end_time ?? Date.now() / 1000) + annotationOffset / 1000,
-    [event.end_time, annotationOffset],
+    () =>
+      (event.end_time ?? Date.now() / 1000) + sourceOffsetRef.current / 1000,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [event.end_time, event.id],
   );
 
   const { data: recordings } = useSWR<Recording[]>(
@@ -117,19 +140,64 @@ export function TrackingDetails({
     },
   );
 
+  // Fetch the VOD manifest JSON to get the actual clipFrom after keyframe
+  // snapping. The backend may snap clipFrom backwards to a keyframe, making
+  // the video start earlier than the requested time.
+  const vodManifestUrl = useMemo(() => {
+    if (!event.camera) return null;
+    const startTime =
+      event.start_time + annotationOffset / 1000 - REVIEW_PADDING;
+    const endTime =
+      (event.end_time ?? Date.now() / 1000) +
+      annotationOffset / 1000 +
+      REVIEW_PADDING;
+    return `vod/clip/${event.camera}/start/${startTime}/end/${endTime}`;
+  }, [event, annotationOffset]);
+
+  const { data: vodManifest } = useSWR<VodManifest>(vodManifestUrl, null, {
+    revalidateOnFocus: false,
+    revalidateOnReconnect: false,
+    dedupingInterval: 30000,
+  });
+
+  // Derive the actual video start time from the VOD manifest's first clip.
+  // Without this correction the timeline-to-player-time mapping is off by
+  // the keyframe preroll amount.
+  const actualVideoStart = useMemo(() => {
+    const videoStartTime = eventStartRecord - REVIEW_PADDING;
+
+    if (!vodManifest?.sequences?.[0]?.clips?.[0] || !recordings?.length) {
+      return videoStartTime;
+    }
+
+    const firstClip = vodManifest.sequences[0].clips[0];
+
+    // Guard: clipFrom is only expected when the first recording starts before
+    // the requested start. If this doesn't hold, fall back.
+    if (recordings[0].start_time >= videoStartTime) {
+      return recordings[0].start_time;
+    }
+
+    if (firstClip.clipFrom !== undefined) {
+      // clipFrom is in milliseconds from the start of the first recording
+      return recordings[0].start_time + firstClip.clipFrom / 1000;
+    }
+
+    // clipFrom absent means the full recording is included (keyframe probe failed)
+    return recordings[0].start_time;
+  }, [vodManifest, recordings, eventStartRecord]);
+
   // Convert a timeline timestamp to actual video player time, accounting for
   // motion-only recording gaps. Uses the same algorithm as DynamicVideoController.
   const timestampToVideoTime = useCallback(
     (timestamp: number): number => {
       if (!recordings || recordings.length === 0) {
         // Fallback to simple calculation if no recordings data
-        return timestamp - (eventStartRecord - REVIEW_PADDING);
+        return timestamp - actualVideoStart;
       }
 
-      const videoStartTime = eventStartRecord - REVIEW_PADDING;
-
-      // If timestamp is before video start, return 0
-      if (timestamp < videoStartTime) return 0;
+      // If timestamp is before actual video start, return 0
+      if (timestamp < actualVideoStart) return 0;
 
       // Check if timestamp is before the first recording or after the last
       if (
@@ -143,10 +211,10 @@ export function TrackingDetails({
       // Calculate the inpoint offset - the HLS video may start partway through the first segment
       let inpointOffset = 0;
       if (
-        videoStartTime > recordings[0].start_time &&
-        videoStartTime < recordings[0].end_time
+        actualVideoStart > recordings[0].start_time &&
+        actualVideoStart < recordings[0].end_time
       ) {
-        inpointOffset = videoStartTime - recordings[0].start_time;
+        inpointOffset = actualVideoStart - recordings[0].start_time;
       }
 
       let seekSeconds = 0;
@@ -164,7 +232,7 @@ export function TrackingDetails({
           if (segment === recordings[0]) {
             // For the first segment, account for the inpoint offset
             seekSeconds +=
-              timestamp - Math.max(segment.start_time, videoStartTime);
+              timestamp - Math.max(segment.start_time, actualVideoStart);
           } else {
             seekSeconds += timestamp - segment.start_time;
           }
@@ -174,7 +242,7 @@ export function TrackingDetails({
 
       return seekSeconds;
     },
-    [recordings, eventStartRecord],
+    [recordings, actualVideoStart],
   );
 
   // Convert video player time back to timeline timestamp, accounting for
@@ -183,19 +251,16 @@ export function TrackingDetails({
     (playerTime: number): number => {
       if (!recordings || recordings.length === 0) {
         // Fallback to simple calculation if no recordings data
-        const videoStartTime = eventStartRecord - REVIEW_PADDING;
-        return playerTime + videoStartTime;
+        return playerTime + actualVideoStart;
       }
-
-      const videoStartTime = eventStartRecord - REVIEW_PADDING;
 
       // Calculate the inpoint offset - the video may start partway through the first segment
       let inpointOffset = 0;
       if (
-        videoStartTime > recordings[0].start_time &&
-        videoStartTime < recordings[0].end_time
+        actualVideoStart > recordings[0].start_time &&
+        actualVideoStart < recordings[0].end_time
       ) {
-        inpointOffset = videoStartTime - recordings[0].start_time;
+        inpointOffset = actualVideoStart - recordings[0].start_time;
       }
 
       let timestamp = 0;
@@ -212,7 +277,7 @@ export function TrackingDetails({
           if (segment === recordings[0]) {
             // For the first segment, add the inpoint offset
             timestamp =
-              Math.max(segment.start_time, videoStartTime) +
+              Math.max(segment.start_time, actualVideoStart) +
               (playerTime - totalTime);
           } else {
             timestamp = segment.start_time + (playerTime - totalTime);
@@ -225,7 +290,7 @@ export function TrackingDetails({
 
       return timestamp;
     },
-    [recordings, eventStartRecord],
+    [recordings, actualVideoStart],
   );
 
   eventSequence?.map((event) => {
@@ -243,6 +308,8 @@ export function TrackingDetails({
   }, [manualOverride, currentTime, annotationOffset]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const { fullscreen, toggleFullscreen, supportsFullScreen } =
+    useFullscreen(containerRef);
   const timelineContainerRef = useRef<HTMLDivElement | null>(null);
   const rowRefs = useRef<(HTMLDivElement | null)[]>([]);
   const [_selectedZone, setSelectedZone] = useState("");
@@ -295,6 +362,53 @@ export function TrackingDetails({
     setSelectedObjectIds([event.id]);
   }, [event.id, setSelectedObjectIds]);
 
+  // When the annotation settings popover is open, pin the video to a specific
+  // lifecycle event (detect-stream timestamp). As the user drags the offset
+  // slider, the video re-seeks to show the recording frame at
+  // pinnedTimestamp + newOffset, while the bounding box stays fixed at the
+  // pinned detect timestamp. This lets the user visually align the box to
+  // the car in the video.
+  const pinnedDetectTimestampRef = useRef<number | null>(null);
+  const wasAnnotationOpenRef = useRef(false);
+
+  // On popover open: pause, pin first lifecycle item, and seek.
+  useEffect(() => {
+    if (isAnnotationSettingsOpen && !wasAnnotationOpenRef.current) {
+      if (videoRef.current && displaySource === "video") {
+        videoRef.current.pause();
+      }
+      if (eventSequence && eventSequence.length > 0) {
+        pinnedDetectTimestampRef.current = eventSequence[0].timestamp;
+      }
+    }
+    if (!isAnnotationSettingsOpen) {
+      pinnedDetectTimestampRef.current = null;
+    }
+    wasAnnotationOpenRef.current = isAnnotationSettingsOpen;
+  }, [isAnnotationSettingsOpen, displaySource, eventSequence]);
+
+  // When the pinned timestamp or offset changes, re-seek the video and
+  // explicitly update currentTime so the overlay shows the pinned event's box.
+  useEffect(() => {
+    const pinned = pinnedDetectTimestampRef.current;
+    if (!isAnnotationSettingsOpen || pinned == null) return;
+    if (!videoRef.current || displaySource !== "video") return;
+
+    const targetTimeRecord = pinned + annotationOffset / 1000;
+    const relativeTime = timestampToVideoTime(targetTimeRecord);
+    videoRef.current.currentTime = relativeTime;
+
+    // Explicitly update currentTime state so the overlay's effectiveCurrentTime
+    // resolves back to the pinned detect timestamp:
+    //   effectiveCurrentTime = targetTimeRecord - annotationOffset/1000 = pinned
+    setCurrentTime(targetTimeRecord);
+  }, [
+    isAnnotationSettingsOpen,
+    annotationOffset,
+    displaySource,
+    timestampToVideoTime,
+  ]);
+
   const handleLifecycleClick = useCallback(
     (item: TrackingDetailsSequence) => {
       if (!videoRef.current && !imgRef.current) return;
@@ -320,17 +434,18 @@ export function TrackingDetails({
     [annotationOffset, displaySource, timestampToVideoTime],
   );
 
+  const is24Hour = use24HourTime(config);
+
   const formattedStart = config
     ? formatUnixTimestampToDateTime(event.start_time ?? 0, {
         timezone: config.ui.timezone,
-        date_format:
-          config.ui.time_format == "24hour"
-            ? t("time.formattedTimestamp.24hour", {
-                ns: "common",
-              })
-            : t("time.formattedTimestamp.12hour", {
-                ns: "common",
-              }),
+        date_format: is24Hour
+          ? t("time.formattedTimestamp.24hour", {
+              ns: "common",
+            })
+          : t("time.formattedTimestamp.12hour", {
+              ns: "common",
+            }),
         time_style: "medium",
         date_style: "medium",
       })
@@ -340,14 +455,13 @@ export function TrackingDetails({
     config && event.end_time != null
       ? formatUnixTimestampToDateTime(event.end_time, {
           timezone: config.ui.timezone,
-          date_format:
-            config.ui.time_format == "24hour"
-              ? t("time.formattedTimestamp.24hour", {
-                  ns: "common",
-                })
-              : t("time.formattedTimestamp.12hour", {
-                  ns: "common",
-                }),
+          date_format: is24Hour
+            ? t("time.formattedTimestamp.24hour", {
+                ns: "common",
+              })
+            : t("time.formattedTimestamp.12hour", {
+                ns: "common",
+              }),
           time_style: "medium",
           date_style: "medium",
         })
@@ -450,19 +564,23 @@ export function TrackingDetails({
 
   const videoSource = useMemo(() => {
     // event.start_time and event.end_time are in DETECT stream time
-    // Convert to record stream time, then create video clip with padding
-    const eventStartRecord = event.start_time + annotationOffset / 1000;
-    const eventEndRecord =
-      (event.end_time ?? Date.now() / 1000) + annotationOffset / 1000;
-    const startTime = eventStartRecord - REVIEW_PADDING;
-    const endTime = eventEndRecord + REVIEW_PADDING;
+    // Convert to record stream time, then create video clip with padding.
+    // Use sourceOffsetRef (stable per event) so the HLS player doesn't
+    // reload while the user is dragging the annotation offset slider.
+    const sourceOffset = sourceOffsetRef.current;
+    const eventStartRec = event.start_time + sourceOffset / 1000;
+    const eventEndRec =
+      (event.end_time ?? Date.now() / 1000) + sourceOffset / 1000;
+    const startTime = eventStartRec - REVIEW_PADDING;
+    const endTime = eventEndRec + REVIEW_PADDING;
     const playlist = `${baseUrl}vod/clip/${event.camera}/start/${startTime}/end/${endTime}/index.m3u8`;
 
     return {
       playlist,
       startPosition: 0,
     };
-  }, [event, annotationOffset]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event]);
 
   // Determine camera aspect ratio category
   const cameraAspect = useMemo(() => {
@@ -518,6 +636,13 @@ export function TrackingDetails({
     return axios.post(`/${event.camera}/plus/${currentTime}`);
   }, [event.camera, currentTime]);
 
+  const getSnapshotUrlForPlus = useCallback(() => {
+    if (!currentTime) {
+      return undefined;
+    }
+    return `${apiHost}api/${event.camera}/recordings/${currentTime}/snapshot.jpg?height=500`;
+  }, [apiHost, event.camera, currentTime]);
+
   if (!config) {
     return <ActivityIndicator />;
   }
@@ -559,14 +684,16 @@ export function TrackingDetails({
                 visible={true}
                 currentSource={videoSource}
                 hotKeys={false}
-                supportsFullscreen={false}
-                fullscreen={false}
+                supportsFullscreen={supportsFullScreen}
+                fullscreen={fullscreen}
                 frigateControls={true}
                 onTimeUpdate={handleTimeUpdate}
                 onSeekToTime={handleSeekToTime}
                 onUploadFrame={onUploadFrameToPlus}
+                getSnapshotUrl={getSnapshotUrlForPlus}
                 onPlaying={() => setIsVideoLoading(false)}
                 setFullResolution={setFullResolution}
+                toggleFullscreen={toggleFullscreen}
                 isDetailMode={true}
                 camera={event.camera}
                 currentTimeOverride={currentTime}
@@ -748,6 +875,7 @@ export function TrackingDetails({
                             getZoneColor={getZoneColor}
                             effectiveTime={effectiveTime}
                             isTimelineActive={isWithinEventRange}
+                            annotationOffset={annotationOffset}
                           />
                         </div>
                       );
@@ -771,6 +899,7 @@ type LifecycleIconRowProps = {
   getZoneColor: (zoneName: string) => number[] | undefined;
   effectiveTime?: number;
   isTimelineActive?: boolean;
+  annotationOffset: number;
 };
 
 function LifecycleIconRow({
@@ -781,10 +910,12 @@ function LifecycleIconRow({
   getZoneColor,
   effectiveTime,
   isTimelineActive,
+  annotationOffset,
 }: LifecycleIconRowProps) {
   const { t } = useTranslation(["views/explore", "components/player"]);
   const { data: config } = useSWR<FrigateConfig>("config");
   const [isOpen, setIsOpen] = useState(false);
+  const [showAdvancedScores, setShowAdvancedScores] = useState(false);
   const navigate = useNavigate();
   const isAdmin = useIsAdmin();
 
@@ -804,24 +935,25 @@ function LifecycleIconRow({
     [effectiveTime, item.timestamp],
   );
 
+  const is24Hour = use24HourTime(config);
+
   const formattedEventTimestamp = useMemo(
     () =>
       config
         ? formatUnixTimestampToDateTime(item.timestamp ?? 0, {
             timezone: config.ui.timezone,
-            date_format:
-              config.ui.time_format == "24hour"
-                ? t("time.formattedTimestampHourMinuteSecond.24hour", {
-                    ns: "common",
-                  })
-                : t("time.formattedTimestampHourMinuteSecond.12hour", {
-                    ns: "common",
-                  }),
+            date_format: is24Hour
+              ? t("time.formattedTimestampHourMinuteSecond.24hour", {
+                  ns: "common",
+                })
+              : t("time.formattedTimestampHourMinuteSecond.12hour", {
+                  ns: "common",
+                }),
             time_style: "medium",
             date_style: "medium",
           })
         : "",
-    [config, item.timestamp, t],
+    [config, is24Hour, item.timestamp, t],
   );
 
   const ratio = useMemo(
@@ -878,12 +1010,31 @@ function LifecycleIconRow({
     [item.data.box],
   );
 
-  const score = useMemo(() => {
-    if (item.data.score !== undefined) {
-      return (item.data.score * 100).toFixed(0) + "%";
-    }
-    return "N/A";
-  }, [item.data.score]);
+  const currentScore = useMemo(
+    () =>
+      item.data.score !== undefined
+        ? (item.data.score * 100).toFixed(0) + "%"
+        : null,
+    [item.data.score],
+  );
+  const computedScore = useMemo(
+    () =>
+      item.data.computed_score !== undefined &&
+      item.data.computed_score !== null &&
+      item.data.computed_score > 0
+        ? (item.data.computed_score * 100).toFixed(0) + "%"
+        : null,
+    [item.data.computed_score],
+  );
+  const topScore = useMemo(
+    () =>
+      item.data.top_score !== undefined &&
+      item.data.top_score !== null &&
+      item.data.top_score > 0
+        ? (item.data.top_score * 100).toFixed(0) + "%"
+        : null,
+    [item.data.top_score],
+  );
 
   return (
     <div
@@ -919,8 +1070,50 @@ function LifecycleIconRow({
                   <span className="text-primary-variant">
                     {t("trackingDetails.lifecycleItemDesc.header.score")}
                   </span>
-                  <span className="font-medium text-primary">{score}</span>
+                  <span className="font-medium text-primary">
+                    {currentScore ?? "N/A"}
+                  </span>
+                  {(computedScore || topScore) && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowAdvancedScores((v) => !v);
+                      }}
+                      className="ml-1 inline-flex items-center text-primary-variant hover:text-primary"
+                      aria-expanded={showAdvancedScores}
+                      aria-label={t(
+                        "trackingDetails.lifecycleItemDesc.header.toggleAdvancedScores",
+                      )}
+                    >
+                      {showAdvancedScores ? (
+                        <LuChevronDown className="size-3.5" />
+                      ) : (
+                        <LuChevronRight className="size-3.5" />
+                      )}
+                    </button>
+                  )}
                 </div>
+                {showAdvancedScores && computedScore && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-primary-variant">
+                      {t(
+                        "trackingDetails.lifecycleItemDesc.header.computedScore",
+                      )}
+                    </span>
+                    <span className="font-medium text-primary">
+                      {computedScore}
+                    </span>
+                  </div>
+                )}
+                {showAdvancedScores && topScore && (
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-primary-variant">
+                      {t("trackingDetails.lifecycleItemDesc.header.topScore")}
+                    </span>
+                    <span className="font-medium text-primary">{topScore}</span>
+                  </div>
+                )}
                 <div className="flex items-center gap-1.5">
                   <span className="text-primary-variant">
                     {t("trackingDetails.lifecycleItemDesc.header.ratio")}
@@ -1010,7 +1203,7 @@ function LifecycleIconRow({
         <div className="ml-3 flex-shrink-0 px-1 text-right text-xs text-primary-variant">
           <div className="flex flex-row items-center gap-3">
             <div className="whitespace-nowrap">{formattedEventTimestamp}</div>
-            {isAdmin && config?.plus?.enabled && item.data.box && (
+            {isAdmin && (config?.plus?.enabled || item.data.box) && (
               <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
                 <DropdownMenuTrigger>
                   <div className="rounded p-1 pr-2" role="button">
@@ -1024,7 +1217,7 @@ function LifecycleIconRow({
                         className="cursor-pointer"
                         onSelect={async () => {
                           const resp = await axios.post(
-                            `/${item.camera}/plus/${item.timestamp}`,
+                            `/${item.camera}/plus/${item.timestamp + annotationOffset / 1000}`,
                           );
 
                           if (resp && resp.status == 200) {

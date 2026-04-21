@@ -52,10 +52,18 @@ RUN --mount=type=tmpfs,target=/tmp --mount=type=tmpfs,target=/var/cache/apt \
     --mount=type=cache,target=/root/.ccache \
     /deps/build_sqlite_vec.sh
 
+# Build intel-media-driver from source against bookworm's system libva so it
+# works with Debian 12's glibc/libstdc++ (pre-built noble/trixie packages
+# require glibc 2.38 which is not available on bookworm).
+FROM base AS intel-media-driver
+ARG DEBIAN_FRONTEND
+RUN --mount=type=bind,source=docker/main/build_intel_media_driver.sh,target=/deps/build_intel_media_driver.sh \
+    /deps/build_intel_media_driver.sh
+
 FROM scratch AS go2rtc
 ARG TARGETARCH
 WORKDIR /rootfs/usr/local/go2rtc/bin
-ADD --link --chmod=755 "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.10/go2rtc_linux_${TARGETARCH}" go2rtc
+ADD --link --chmod=755 "https://github.com/AlexxIT/go2rtc/releases/download/v1.9.13/go2rtc_linux_${TARGETARCH}" go2rtc
 
 FROM wget AS tempio
 ARG TARGETARCH
@@ -200,6 +208,7 @@ RUN --mount=type=bind,source=docker/main/install_hailort.sh,target=/deps/install
 FROM scratch AS deps-rootfs
 COPY --from=nginx /usr/local/nginx/ /usr/local/nginx/
 COPY --from=sqlite-vec /usr/local/lib/ /usr/local/lib/
+COPY --from=intel-media-driver /rootfs/ /
 COPY --from=go2rtc /rootfs/ /
 COPY --from=libusb-build /usr/local/lib /usr/local/lib
 COPY --from=tempio /rootfs/ /
@@ -265,6 +274,12 @@ RUN wget -q https://bootstrap.pypa.io/get-pip.py -O get-pip.py \
 
 RUN --mount=type=bind,from=wheels,source=/wheels,target=/deps/wheels \
     pip3 install -U /deps/wheels/*.whl
+
+# Install Axera Engine
+RUN pip3 install https://github.com/AXERA-TECH/pyaxengine/releases/download/0.1.3-frigate/axengine-0.1.3-py3-none-any.whl
+
+ENV PATH="${PATH}:/usr/bin/axcl"
+ENV LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:/usr/lib/axcl"
 
 # Install MemryX runtime (requires libgomp (OpenMP) in the final docker image)
 RUN --mount=type=bind,source=docker/main/install_memryx.sh,target=/deps/install_memryx.sh \

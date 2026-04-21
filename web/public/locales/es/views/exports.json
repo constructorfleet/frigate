@@ -2,7 +2,9 @@
   "search": "Búsqueda",
   "documentTitle": "Exportar - Frigate",
   "noExports": "No se encontraron exportaciones",
-  "deleteExport": "Eliminar exportación",
+  "deleteExport": {
+    "label": "Eliminar exportación"
+  },
   "editExport": {
     "desc": "Introduce un nuevo nombre para esta exportación.",
     "saveExport": "Guardar exportación",
@@ -10,7 +12,8 @@
   },
   "toast": {
     "error": {
-      "renameExportFailed": "No se pudo renombrar la exportación: {{errorMessage}}"
+      "renameExportFailed": "No se pudo renombrar la exportación: {{errorMessage}}",
+      "assignCaseFailed": "Fallo en la actualización de la asignación de caso: {{errorMessage}}"
     }
   },
   "deleteExport.desc": "¿Estás seguro de que quieres eliminar {{exportName}}?",
@@ -18,6 +21,18 @@
     "shareExport": "Compartir exportación",
     "downloadVideo": "Descargar video",
     "editName": "Editar nombre",
-    "deleteExport": "Eliminar exportación"
+    "deleteExport": "Eliminar exportación",
+    "assignToCase": "Añadir al caso"
+  },
+  "headings": {
+    "cases": "Casos",
+    "uncategorizedExports": "Exportaciones sin categorizar"
+  },
+  "caseDialog": {
+    "title": "Añadir al caso",
+    "newCaseOption": "Crear nuevo caso",
+    "nameLabel": "Nombre del caso",
+    "description": "Elige un caso existente o crea uno nuevo.",
+    "selectLabel": "Caso"
   }
 }

@@ -62,11 +62,12 @@ def get_camera_regions_grid(
         .where((Event.false_positive == None) | (Event.false_positive == False))
         .where(Event.start_time > last_update)
     )
-    valid_event_ids = [e["id"] for e in events.dicts()]
-    logger.debug(f"Found {len(valid_event_ids)} new events for {name}")
+
+    event_count = events.count()
+    logger.debug(f"Found {event_count} new events for {name}")
 
     # no new events, return as is
-    if not valid_event_ids:
+    if event_count == 0:
         return grid
 
     new_update = datetime.datetime.now().timestamp()
@@ -78,7 +79,7 @@ def get_camera_regions_grid(
                 Timeline.data,
             ]
         )
-        .where(Timeline.source_id << valid_event_ids)
+        .where(Timeline.source_id << events)
         .limit(10000)
         .dicts()
     )
@@ -248,20 +249,20 @@ def is_object_filtered(obj, objects_to_track, object_filters):
         if obj_settings.max_ratio < object_ratio:
             return True
 
-        if obj_settings.mask is not None:
+        if obj_settings.rasterized_mask is not None:
             # compute the coordinates of the object and make sure
             # the location isn't outside the bounds of the image (can happen from rounding)
             object_xmin = object_box[0]
             object_xmax = object_box[2]
             object_ymax = object_box[3]
-            y_location = min(int(object_ymax), len(obj_settings.mask) - 1)
+            y_location = min(int(object_ymax), len(obj_settings.rasterized_mask) - 1)
             x_location = min(
                 int((object_xmax + object_xmin) / 2.0),
-                len(obj_settings.mask[0]) - 1,
+                len(obj_settings.rasterized_mask[0]) - 1,
             )
 
             # if the object is in a masked location, don't add it to detected objects
-            if obj_settings.mask[y_location][x_location] == 0:
+            if obj_settings.rasterized_mask[y_location][x_location] == 0:
                 return True
 
     return False
@@ -271,18 +272,17 @@ def get_min_region_size(model_config: ModelConfig) -> int:
     """Get the min region size."""
     largest_dimension = max(model_config.height, model_config.width)
 
-    if largest_dimension > 320:
-        # We originally tested allowing any model to have a region down to half of the model size
-        # but this led to many false positives. In this case we specifically target larger models
-        # which can benefit from a smaller region in some cases to detect smaller objects.
-        half = int(largest_dimension / 2)
+    # return largest dimension for smaller models, but make sure the dimension is normalized
+    if largest_dimension < 320:
+        if largest_dimension % 4 == 0:
+            return largest_dimension
 
-        if half % 4 == 0:
-            return half
+        return int((largest_dimension + 3) / 4) * 4
 
-        return int((half + 3) / 4) * 4
-
-    return largest_dimension
+    # Any model that is 320 or larger should have a minimum region size of 320
+    # this allows larger models to use smaller regions to detect smaller objects
+    # in the case that the motion area is smaller so that it can be upscaled.
+    return 320
 
 
 def create_tensor_input(frame, model_config: ModelConfig, region):

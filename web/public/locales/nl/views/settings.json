@@ -7,12 +7,16 @@
     "classification": "Classificatie-instellingen - Frigate",
     "masksAndZones": "Masker- en zone-editor - Frigate",
     "object": "Foutopsporing Frigate",
-    "general": "Gebruikersinterface-instellingen - Frigate",
+    "general": "UI Instellingen - Frigate",
     "frigatePlus": "Frigate+ Instellingen - Frigate",
     "notifications": "Meldingsinstellingen - Frigate",
     "enrichments": "Verrijkingsinstellingen - Frigate",
     "cameraManagement": "Camera's beheren - Frigate",
-    "cameraReview": "Camera Review Instellingen - Frigate"
+    "cameraReview": "Camera Review Instellingen - Frigate",
+    "globalConfig": "Globale configuratie - Frigate",
+    "cameraConfig": "Camera-instellingen - Frigate",
+    "maintenance": "Onderhoud - Frigate",
+    "profiles": "Profielen - Frigate"
   },
   "menu": {
     "ui": "Gebruikersinterface",
@@ -28,7 +32,63 @@
     "triggers": "Triggers",
     "roles": "Rollen",
     "cameraManagement": "Beheer",
-    "cameraReview": "Beoordeel"
+    "cameraReview": "Beoordeel",
+    "general": "Algemeen",
+    "globalConfig": "Globale configuratie",
+    "system": "Systeem",
+    "integrations": "Integraties",
+    "profileSettings": "Profielinstellingen",
+    "globalDetect": "Objectdetectie",
+    "globalRecording": "Opname",
+    "globalSnapshots": "Snapshots",
+    "globalFfmpeg": "FFmpeg",
+    "globalMotion": "Bewegingsdetectie",
+    "globalObjects": "Objecten",
+    "globalReview": "Beoordelen",
+    "globalAudioEvents": "Geluidsgebeurtenissen",
+    "globalLivePlayback": "Live afspelen",
+    "globalTimestampStyle": "Tijdstempelstijl",
+    "systemDatabase": "Database",
+    "systemTls": "TLS",
+    "systemAuthentication": "Authenticatie",
+    "cameraNotifications": "Notificaties",
+    "integrationGenerativeAi": "Generatieve AI",
+    "systemNetworking": "Netwerken",
+    "profiles": "Profielen",
+    "uiSettings": "UI instellingen",
+    "systemProxy": "Proxy",
+    "systemUi": "UI",
+    "systemLogging": "Logging",
+    "integrationFaceRecognition": "Gezichtsherkenning",
+    "integrationLpr": "Kentekenplaat herkenning",
+    "integrationObjectClassification": "Object classificatie",
+    "integrationAudioTranscription": "Audio transcriptie",
+    "cameraDetect": "Object detectie",
+    "cameraFfmpeg": "FFmpeg",
+    "cameraRecording": "Opnemen",
+    "cameraSnapshots": "Momentopnames",
+    "cameraMotion": "Bewegingsdetectie",
+    "cameraObjects": "Objecten",
+    "cameraAudioEvents": "Audio gebeurtenissen",
+    "cameraAudioTranscription": "Audio transcriptie",
+    "integrationSemanticSearch": "Semantisch zoeken",
+    "systemDetectionModel": "Detectie model",
+    "systemMqtt": "MQTT",
+    "systemEnvironmentVariables": "Omgevingsvariabelen",
+    "systemTelemetry": "Telemetrie",
+    "systemBirdseye": "Overzicht",
+    "systemFfmpeg": "FFmpeg",
+    "systemDetectorHardware": "Detectie hardware",
+    "cameraFaceRecognition": "Gezichtsherkenning",
+    "systemGo2rtcStreams": "go2rtc streams",
+    "cameraConfigReview": "Beoordeling",
+    "cameraLivePlayback": "Live weergave",
+    "cameraLpr": "Kentekenplaat herkenning",
+    "cameraMqttConfig": "MQTT",
+    "cameraOnvif": "ONVIF",
+    "cameraUi": "Camera UI",
+    "cameraTimestampStyle": "Tijdstempel stijl",
+    "maintenance": "Onderhoud"
   },
   "dialog": {
     "unsavedChanges": {
@@ -287,6 +347,11 @@
         },
         "reset": {
           "label": "Alle punten wissen"
+        },
+        "type": {
+          "zone": "zone",
+          "motion_mask": "bewegingsmasker",
+          "object_mask": "objectmasker"
         }
       },
       "speed": {
@@ -546,7 +611,7 @@
           "hide": "Wachtwoord verbergen",
           "requirements": {
             "title": "Wachtwoordvereisten:",
-            "length": "Minimaal 8 tekens",
+            "length": "Minimaal 12 tekens",
             "uppercase": "Minimaal één hoofdletter",
             "digit": "Minimaal één cijfer",
             "special": "Minimaal één speciaal teken (!@#$%^&*(),.?\":{}|<>)"
@@ -670,14 +735,14 @@
     },
     "snapshotConfig": {
       "title": "Snapshot-configuratie",
-      "desc": "Om te verzenden naar Frigate+ moeten zowel snapshots als <code>clean_copy</code>-snapshots ingeschakeld zijn in je configuratie.",
+      "desc": "Om te verzenden naar Frigate+ moeten snapshots ingeschakeld zijn in je configuratie.",
       "documentation": "Lees de documentatie",
       "table": {
         "camera": "Camera",
         "snapshots": "Snapshots",
         "cleanCopySnapshots": "<code>clean_copy</code> Snapshots"
       },
-      "cleanCopyWarning": "Bij sommige camera's zijn snapshots ingeschakeld, maar ontbreekt de 'clean_copy'. Om afbeeldingen van deze camera's naar Frigate+ te kunnen verzenden, moet <code>clean_copy</code> zijn ingeschakeld in de snapshotconfiguratie."
+      "cleanCopyWarning": "Sommige camera's hebben snapshots uitgeschakeld"
     },
     "modelInfo": {
       "title": "Modelinformatie",
@@ -1306,5 +1371,11 @@
         "success": "Configuratie voor beoordelingsclassificatie is opgeslagen. Herstart Frigate om de wijzigingen toe te passen."
       }
     }
+  },
+  "button": {
+    "overriddenGlobal": "Overschreven (globaal)",
+    "overriddenGlobalTooltip": "Deze camera heeft voorrang op de algemene configuratie-instellingen in dit gedeelte",
+    "overriddenBaseConfig": "Overschreven (basis configuratie)",
+    "overriddenBaseConfigTooltip": "Het profiel {{profile}} heeft voorrang op de configuratie-instellingen in dit gedeelte"
   }
 }

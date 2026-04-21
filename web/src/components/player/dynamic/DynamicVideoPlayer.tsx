@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useApiHost } from "@/api";
 import useSWR from "swr";
 import { FrigateConfig } from "@/types/frigateConfig";
@@ -40,6 +47,7 @@ type DynamicVideoPlayerProps = {
   setFullResolution: React.Dispatch<React.SetStateAction<VideoResolutionType>>;
   toggleFullscreen: () => void;
   containerRef?: React.MutableRefObject<HTMLDivElement | null>;
+  transformedOverlay?: ReactNode;
 };
 export default function DynamicVideoPlayer({
   className,
@@ -58,6 +66,7 @@ export default function DynamicVideoPlayer({
   setFullResolution,
   toggleFullscreen,
   containerRef,
+  transformedOverlay,
 }: DynamicVideoPlayerProps) {
   const { t } = useTranslation(["components/player"]);
   const apiHost = useApiHost();
@@ -170,6 +179,21 @@ export default function DynamicVideoPlayer({
       return axios.post(`/${camera}/plus/${time}`);
     },
     [camera, controller],
+  );
+
+  const getSnapshotUrlForPlus = useCallback(
+    (playTime: number) => {
+      if (!controller) {
+        return undefined;
+      }
+
+      const time = controller.getProgress(playTime);
+      if (!time) {
+        return undefined;
+      }
+      return `${apiHost}api/${camera}/recordings/${time}/snapshot.jpg?height=500`;
+    },
+    [apiHost, camera, controller],
   );
 
   // state of playback player
@@ -303,6 +327,7 @@ export default function DynamicVideoPlayer({
           }}
           setFullResolution={setFullResolution}
           onUploadFrame={onUploadFrameToPlus}
+          getSnapshotUrl={getSnapshotUrlForPlus}
           toggleFullscreen={toggleFullscreen}
           onError={(error) => {
             if (error == "stalled" && !isScrubbing) {
@@ -312,6 +337,7 @@ export default function DynamicVideoPlayer({
           isDetailMode={isDetailMode}
           camera={contextCamera || camera}
           currentTimeOverride={currentTime}
+          transformedOverlay={transformedOverlay}
         />
       )}
       <PreviewPlayer

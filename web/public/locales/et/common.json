@@ -178,7 +178,10 @@
     "export": "Ekspordi",
     "uiPlayground": "Leht kasutajaliidese katsetamiseks",
     "faceLibrary": "Näoteek",
-    "classification": "Klassifikatsioon"
+    "classification": "Klassifikatsioon",
+    "chat": "Vestlus",
+    "actions": "Tegevused",
+    "profiles": "Profiilid"
   },
   "unit": {
     "speed": {
@@ -234,7 +237,19 @@
     "export": "Ekspordi",
     "deleteNow": "Kustuta kohe",
     "next": "Järgmine",
-    "continue": "Jätka"
+    "continue": "Jätka",
+    "add": "Lisa",
+    "undo": "Võta tegevus tagasi",
+    "copiedToClipboard": "Kopeeritud lõikelauale",
+    "modified": "Muudetud",
+    "overridden": "Sürjutatud",
+    "resetToDefault": "Lähtesta vaikimisi väärtusteks",
+    "saveAll": "Salvesta kõik",
+    "resetToGlobal": "Lähtesta üldiseks väärtusteks",
+    "savingAll": "Salvestan kõiki…",
+    "undoAll": "Pööra kõik tegevused tagasi",
+    "applying": "Võtan kasutusele…",
+    "retry": "Proovi uuesti"
   },
   "label": {
     "back": "Mine tagasi",
@@ -261,7 +276,8 @@
       "error": {
         "title": "Seadistuste muudatuste salvestamine ei õnnestunud: {{errorMessage}}",
         "noMessage": "Seadistuste muudatuste salvestamine ei õnnestunud"
-      }
+      },
+      "success": "Seadistuste muudatuste salvestamine õnnestus."
     }
   },
   "role": {
@@ -296,5 +312,7 @@
   "readTheDocumentation": "Loe dokumentatsiooni ja juhendit",
   "information": {
     "pixels": "{{area}} px"
-  }
+  },
+  "no_items": "Objekte pole",
+  "validation_errors": "Valideerimise vead"
 }

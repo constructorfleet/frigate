@@ -129,7 +129,19 @@
     "pictureInPicture": "Immagine nell'immagine",
     "twoWayTalk": "Comunicazione bidirezionale",
     "cameraAudio": "Audio della telecamera",
-    "continue": "Continua"
+    "continue": "Continua",
+    "add": "Aggiungi",
+    "undo": "Annulla",
+    "copiedToClipboard": "Copiato negli appunti",
+    "modified": "Modificato",
+    "overridden": "Sovrascritto",
+    "resetToGlobal": "Ripristina impostazioni globali",
+    "resetToDefault": "Ripristina impostazioni predefinite",
+    "saveAll": "Salva tutto",
+    "savingAll": "Salvataggio di tutto…",
+    "undoAll": "Annulla tutto",
+    "applying": "Applica…",
+    "retry": "Riprova"
   },
   "unit": {
     "speed": {
@@ -208,7 +220,8 @@
       "bg": "Български (Bulgaro)",
       "gl": "Galego (Galiziano)",
       "id": "Bahasa Indonesia (Indonesiano)",
-      "ur": "اردو (Urdu)"
+      "ur": "اردو (Urdu)",
+      "hr": "Hrvatski (Croato)"
     },
     "darkMode": {
       "label": "Modalità scura",
@@ -259,7 +272,10 @@
     },
     "withSystem": "Sistema",
     "faceLibrary": "Raccolta volti",
-    "classification": "Classificazione"
+    "classification": "Classificazione",
+    "chat": "Chat",
+    "profiles": "Profili",
+    "actions": "Azioni"
   },
   "pagination": {
     "next": {
@@ -296,7 +312,8 @@
         "title": "Impossibile salvare le modifiche alla configurazione: {{errorMessage}}",
         "noMessage": "Impossibile salvare le modifiche alla configurazione"
       },
-      "title": "Salva"
+      "title": "Salva",
+      "success": "Modifiche alla configurazione salvate correttamente."
     }
   },
   "selectItem": "Seleziona {{item}}",
@@ -312,5 +329,7 @@
   "field": {
     "optional": "Opzionale",
     "internalID": "L'ID interno che Frigate utilizza nella configurazione e nel database"
-  }
+  },
+  "no_items": "Nessun elemento",
+  "validation_errors": "Errori di convalida"
 }

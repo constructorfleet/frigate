@@ -19,9 +19,11 @@ from frigate.types import StatsTrackingTypes
 from frigate.util.services import (
     calculate_shm_requirements,
     get_amd_gpu_stats,
+    get_axcl_npu_stats,
     get_bandwidth_stats,
     get_cpu_stats,
     get_fs_type,
+    get_hailo_temps,
     get_intel_gpu_stats,
     get_jetson_stats,
     get_nvidia_gpu_stats,
@@ -90,7 +92,78 @@ def get_temperatures() -> dict[str, float]:
             if temp is not None:
                 temps[apex] = temp
 
+    # Get temperatures for Hailo devices
+    temps.update(get_hailo_temps())
+
     return temps
+
+
+def get_detector_temperature(
+    detector_type: str,
+    detector_index_by_type: dict[str, int],
+) -> Optional[float]:
+    """Get temperature for a specific detector based on its type."""
+    if detector_type == "edgetpu":
+        # Get temperatures for all attached Corals
+        base = "/sys/class/apex/"
+        if os.path.isdir(base):
+            apex_devices = sorted(os.listdir(base))
+            index = detector_index_by_type.get("edgetpu", 0)
+            if index < len(apex_devices):
+                apex_name = apex_devices[index]
+                temp = read_temperature(os.path.join(base, apex_name, "temp"))
+                if temp is not None:
+                    return temp
+    elif detector_type == "hailo8l":
+        # Get temperatures for Hailo devices
+        hailo_temps = get_hailo_temps()
+        if hailo_temps:
+            hailo_device_names = sorted(hailo_temps.keys())
+            index = detector_index_by_type.get("hailo8l", 0)
+            if index < len(hailo_device_names):
+                device_name = hailo_device_names[index]
+                return hailo_temps[device_name]
+    elif detector_type == "rknn":
+        # Rockchip temperatures are handled by the GPU / NPU stats
+        # as there are not detector specific temperatures
+        pass
+
+    return None
+
+
+def get_detector_stats(
+    stats_tracking: StatsTrackingTypes,
+) -> dict[str, dict[str, Any]]:
+    """Get stats for all detectors, including temperatures based on detector type."""
+    detector_stats: dict[str, dict[str, Any]] = {}
+    detector_type_indices: dict[str, int] = {}
+
+    for name, detector in stats_tracking["detectors"].items():
+        pid = detector.detect_process.pid if detector.detect_process else None
+        detector_type = detector.detector_config.type
+
+        # Keep track of the index for each detector type to match temperatures correctly
+        current_index = detector_type_indices.get(detector_type, 0)
+        detector_type_indices[detector_type] = current_index + 1
+
+        detector_stat = {
+            "inference_speed": round(detector.avg_inference_speed.value * 1000, 2),  # type: ignore[attr-defined]
+            # issue https://github.com/python/typeshed/issues/8799
+            # from mypy 0.981 onwards
+            "detection_start": detector.detection_start.value,  # type: ignore[attr-defined]
+            # issue https://github.com/python/typeshed/issues/8799
+            # from mypy 0.981 onwards
+            "pid": pid,
+        }
+
+        temp = get_detector_temperature(detector_type, {detector_type: current_index})
+
+        if temp is not None:
+            detector_stat["temperature"] = round(temp, 1)
+
+        detector_stats[name] = detector_stat
+
+    return detector_stats
 
 
 def get_processing_stats(
@@ -173,6 +246,7 @@ async def set_gpu_stats(
                         "mem": str(round(float(nvidia_usage[i]["mem"]), 2)) + "%",
                         "enc": str(round(float(nvidia_usage[i]["enc"]), 2)) + "%",
                         "dec": str(round(float(nvidia_usage[i]["dec"]), 2)) + "%",
+                        "temp": str(nvidia_usage[i]["temp"]),
                     }
 
             else:
@@ -187,45 +261,33 @@ async def set_gpu_stats(
             else:
                 stats["jetson-gpu"] = {"gpu": "", "mem": ""}
                 hwaccel_errors.append(args)
-        elif "qsv" in args:
+        elif "qsv" in args or ("vaapi" in args and not is_vaapi_amd_driver()):
             if not config.telemetry.stats.intel_gpu_stats:
                 continue
 
-            # intel QSV GPU
-            intel_usage = get_intel_gpu_stats(config.telemetry.stats.intel_gpu_device)
-
-            if intel_usage is not None:
-                stats["intel-qsv"] = intel_usage or {"gpu": "", "mem": ""}
-            else:
-                stats["intel-qsv"] = {"gpu": "", "mem": ""}
-                hwaccel_errors.append(args)
-        elif "vaapi" in args:
-            if is_vaapi_amd_driver():
-                if not config.telemetry.stats.amd_gpu_stats:
-                    continue
-
-                # AMD VAAPI GPU
-                amd_usage = get_amd_gpu_stats()
-
-                if amd_usage:
-                    stats["amd-vaapi"] = amd_usage
-                else:
-                    stats["amd-vaapi"] = {"gpu": "", "mem": ""}
-                    hwaccel_errors.append(args)
-            else:
-                if not config.telemetry.stats.intel_gpu_stats:
-                    continue
-
-                # intel VAAPI GPU
+            if "intel-gpu" not in stats:
+                # intel GPU (QSV or VAAPI both use the same physical GPU)
                 intel_usage = get_intel_gpu_stats(
                     config.telemetry.stats.intel_gpu_device
                 )
 
                 if intel_usage is not None:
-                    stats["intel-vaapi"] = intel_usage or {"gpu": "", "mem": ""}
+                    stats["intel-gpu"] = intel_usage or {"gpu": "", "mem": ""}
                 else:
-                    stats["intel-vaapi"] = {"gpu": "", "mem": ""}
+                    stats["intel-gpu"] = {"gpu": "", "mem": ""}
                     hwaccel_errors.append(args)
+        elif "vaapi" in args:
+            if not config.telemetry.stats.amd_gpu_stats:
+                continue
+
+            # AMD VAAPI GPU
+            amd_usage = get_amd_gpu_stats()
+
+            if amd_usage:
+                stats["amd-vaapi"] = amd_usage
+            else:
+                stats["amd-vaapi"] = {"gpu": "", "mem": ""}
+                hwaccel_errors.append(args)
         elif "preset-rk" in args:
             rga_usage = get_rockchip_gpu_stats()
 
@@ -251,6 +313,10 @@ async def set_npu_usages(config: FrigateConfig, all_stats: dict[str, Any]) -> No
             # OpenVINO NPU usage
             ov_usage = get_openvino_npu_stats()
             stats["openvino"] = ov_usage
+        elif detector.type == "axengine":
+            # AXERA NPU usage
+            axcl_usage = get_axcl_npu_stats()
+            stats["axengine"] = axcl_usage
 
     if stats:
         all_stats["npu_usages"] = stats
@@ -267,6 +333,9 @@ def stats_snapshot(
 
     stats["cameras"] = {}
     for name, camera_stats in camera_metrics.items():
+        if name not in config.cameras:
+            continue
+
         total_camera_fps += camera_stats.camera_fps.value
         total_process_fps += camera_stats.process_fps.value
         total_skipped_fps += camera_stats.skipped_fps.value
@@ -278,6 +347,32 @@ def stats_snapshot(
             if camera_stats.capture_process_pid.value
             else None
         )
+        # Calculate connection quality based on current state
+        # This is computed at stats-collection time so offline cameras
+        # correctly show as unusable rather than excellent
+        expected_fps = config.cameras[name].detect.fps
+        current_fps = camera_stats.camera_fps.value
+        reconnects = camera_stats.reconnects_last_hour.value
+        stalls = camera_stats.stalls_last_hour.value
+
+        if current_fps < 0.1:
+            quality_str = "unusable"
+        elif reconnects == 0 and current_fps >= 0.9 * expected_fps and stalls < 5:
+            quality_str = "excellent"
+        elif reconnects <= 2 and current_fps >= 0.6 * expected_fps:
+            quality_str = "fair"
+        elif reconnects > 10 or current_fps < 1.0 or stalls > 100:
+            quality_str = "unusable"
+        else:
+            quality_str = "poor"
+
+        connection_quality = {
+            "connection_quality": quality_str,
+            "expected_fps": expected_fps,
+            "reconnects_last_hour": reconnects,
+            "stalls_last_hour": stalls,
+        }
+
         stats["cameras"][name] = {
             "camera_fps": round(camera_stats.camera_fps.value, 2),
             "process_fps": round(camera_stats.process_fps.value, 2),
@@ -289,20 +384,10 @@ def stats_snapshot(
             "ffmpeg_pid": ffmpeg_pid,
             "audio_rms": round(camera_stats.audio_rms.value, 4),
             "audio_dBFS": round(camera_stats.audio_dBFS.value, 4),
+            **connection_quality,
         }
 
-    stats["detectors"] = {}
-    for name, detector in stats_tracking["detectors"].items():
-        pid = detector.detect_process.pid if detector.detect_process else None
-        stats["detectors"][name] = {
-            "inference_speed": round(detector.avg_inference_speed.value * 1000, 2),  # type: ignore[attr-defined]
-            # issue https://github.com/python/typeshed/issues/8799
-            # from mypy 0.981 onwards
-            "detection_start": detector.detection_start.value,  # type: ignore[attr-defined]
-            # issue https://github.com/python/typeshed/issues/8799
-            # from mypy 0.981 onwards
-            "pid": pid,
-        }
+    stats["detectors"] = get_detector_stats(stats_tracking)
     stats["camera_fps"] = round(total_camera_fps, 2)
     stats["process_fps"] = round(total_process_fps, 2)
     stats["skipped_fps"] = round(total_skipped_fps, 2)
@@ -388,7 +473,6 @@ def stats_snapshot(
         "version": VERSION,
         "latest_version": stats_tracking["latest_frigate_version"],
         "storage": {},
-        "temperatures": get_temperatures(),
         "last_updated": int(time.time()),
     }
 
@@ -413,5 +497,31 @@ def stats_snapshot(
         stats["processes"][name] = {
             "pid": pid,
         }
+
+    # Embed cpu/mem stats into detectors, cameras, and processes
+    # so history consumers don't need the full cpu_usages dict
+    cpu_usages = stats.get("cpu_usages", {})
+
+    for det_stats in stats["detectors"].values():
+        pid_str = str(det_stats.get("pid", ""))
+        usage = cpu_usages.get(pid_str, {})
+        det_stats["cpu"] = usage.get("cpu")
+        det_stats["mem"] = usage.get("mem")
+
+    for cam_stats in stats["cameras"].values():
+        for pid_key, field in [
+            ("ffmpeg_pid", "ffmpeg_cpu"),
+            ("capture_pid", "capture_cpu"),
+            ("pid", "detect_cpu"),
+        ]:
+            pid_str = str(cam_stats.get(pid_key, ""))
+            usage = cpu_usages.get(pid_str, {})
+            cam_stats[field] = usage.get("cpu")
+
+    for proc_stats in stats["processes"].values():
+        pid_str = str(proc_stats.get("pid", ""))
+        usage = cpu_usages.get(pid_str, {})
+        proc_stats["cpu"] = usage.get("cpu")
+        proc_stats["mem"] = usage.get("mem")
 
     return stats

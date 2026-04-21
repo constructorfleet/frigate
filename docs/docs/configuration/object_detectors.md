@@ -4,6 +4,9 @@ title: Object Detectors
 ---
 
 import CommunityBadge from '@site/src/components/CommunityBadge';
+import ConfigTabs from "@site/src/components/ConfigTabs";
+import TabItem from "@theme/TabItem";
+import NavPath from "@site/src/components/NavPath";
 
 # Supported Hardware
 
@@ -34,7 +37,7 @@ Frigate supports multiple different detectors that work on different types of ha
 
 **Nvidia GPU**
 
-- [ONNX](#onnx): TensorRT will automatically be detected and used as a detector in the `-tensorrt` Frigate image when a supported ONNX model is configured.
+- [ONNX](#onnx): Nvidia GPUs will automatically be detected and used as a detector in the `-tensorrt` Frigate image when a supported ONNX model is configured.
 
 **Nvidia Jetson** <CommunityBadge />
 
@@ -48,6 +51,10 @@ Frigate supports multiple different detectors that work on different types of ha
 **Synaptics** <CommunityBadge />
 
 - [Synaptics](#synaptics): synap models can run on Synaptics devices(e.g astra machina) with included NPUs.
+
+**AXERA** <CommunityBadge />
+
+- [AXEngine](#axera): axmodels can run on AXERA AI acceleration.
 
 **For Testing**
 
@@ -65,7 +72,7 @@ This does not affect using hardware for accelerating other tasks such as [semant
 
 # Officially Supported Detectors
 
-Frigate provides the following builtin detector types: `cpu`, `edgetpu`, `hailo8l`, `memryx`, `onnx`, `openvino`, `rknn`, and `tensorrt`. By default, Frigate will use a single CPU detector. Other detectors may require additional configuration as described below. When using multiple detectors they will run in dedicated processes, but pull from a common queue of detection requests from across all cameras.
+Frigate provides a number of builtin detector types. By default, Frigate will use a single CPU detector. Other detectors may require additional configuration as described below. When using multiple detectors they will run in dedicated processes, but pull from a common queue of detection requests from across all cameras.
 
 ## Edge TPU Detector
 
@@ -81,6 +88,14 @@ See [common Edge TPU troubleshooting steps](/troubleshooting/edgetpu) if the Edg
 
 ### Single USB Coral
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add**, then set device to `usb`.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   coral:
@@ -88,7 +103,18 @@ detectors:
     device: usb
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Multiple USB Corals
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add** to add multiple detectors, specifying `usb:0` and `usb:1` as the device for each.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -100,9 +126,20 @@ detectors:
     device: usb:1
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Native Coral (Dev Board)
 
 _warning: may have [compatibility issues](https://github.com/blakeblackshear/frigate/issues/1706) after `v0.9.x`_
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add**, then leave the device field empty.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -111,7 +148,18 @@ detectors:
     device: ""
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Single PCIE/M.2 Coral
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add**, then set device to `pci`.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -120,7 +168,18 @@ detectors:
     device: pci
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Multiple PCIE/M.2 Corals
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add** to add multiple detectors, specifying `pci:0` and `pci:1` as the device for each.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -132,7 +191,18 @@ detectors:
     device: pci:1
 ```
 
+</TabItem>
+</ConfigTabs>
+
 ### Mixing Corals
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add** to add multiple detectors with different device types (e.g., `usb` and `pci`).
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -143,6 +213,9 @@ detectors:
     type: edgetpu
     device: pci
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ### EdgeTPU Supported Models
 
@@ -157,12 +230,34 @@ A TensorFlow Lite model is provided in the container at `/edgetpu_model.tflite` 
 
 #### YOLOv9
 
-YOLOv9 models that are compiled for TensorFlow Lite and properly quantized are supported, but not included by default. [Download the model](https://github.com/dbro/frigate-detector-edgetpu-yolo9/releases/download/v1.0/yolov9-s-relu6-best_320_int8_edgetpu.tflite), bind mount the file into the container, and provide the path with `model.path`. Note that the linked model requires a 17-label [labelmap file](https://raw.githubusercontent.com/dbro/frigate-detector-edgetpu-yolo9/refs/heads/main/labels-coco17.txt) that includes only 17 COCO classes.
+YOLOv9 models that are compiled for TensorFlow Lite and properly quantized are supported, but not included by default. [Instructions](#yolov9-for-google-coral-support) for downloading a model with support for the Google Coral.
+
+:::tip
+
+**Frigate+ Users:** Follow the [instructions](/integrations/plus#use-models) to set a model ID in your config file.
+
+:::
 
 <details>
   <summary>YOLOv9 Setup & Config</summary>
 
-After placing the downloaded files for the tflite model and labels in your config folder, you can use the following configuration:
+After placing the downloaded files for the tflite model and labels in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **EdgeTPU** from the detector type dropdown and click **Add**, then set device to `usb`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure the model settings:
+
+| Field                                    | Value                                                             |
+| ---------------------------------------- | ----------------------------------------------------------------- |
+| **Object Detection Model Type**          | `yolo-generic`                                                    |
+| **Object detection model input width**   | `320` (should match the imgsize of the model)                     |
+| **Object detection model input height**  | `320` (should match the imgsize of the model)                     |
+| **Custom object detector model path**    | `/config/model_cache/yolov9-s-relu6-best_320_int8_edgetpu.tflite` |
+| **Label map for custom object detector** | `/config/labels-coco17.txt`                                       |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -178,6 +273,9 @@ model:
   labelmap_path: /config/labels-coco17.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 Note that due to hardware limitations of the Coral, the labelmap is a subset of the COCO labels and includes only 17 object classes.
 
 </details>
@@ -188,7 +286,13 @@ Note that due to hardware limitations of the Coral, the labelmap is a subset of 
 
 This detector is available for use with both Hailo-8 and Hailo-8L AI Acceleration Modules. The integration automatically detects your hardware architecture via the Hailo CLI and selects the appropriate default model if no custom model is specified.
 
-See the [installation docs](../frigate/installation.md#hailo-8l) for information on configuring the Hailo hardware.
+See the [installation docs](../frigate/installation.md#hailo-8) for information on configuring the Hailo hardware.
+
+:::info
+
+If no custom model is provided, the Hailo detector downloads a default model from the Hailo Model Zoo on first startup. Once cached, the model works fully offline. See [Network Requirements](/frigate/network_requirements#hardware-specific-detector-models) for details.
+
+:::
 
 ### Configuration
 
@@ -201,6 +305,26 @@ Use this configuration for YOLO-based models. When no custom model path or URL i
 
 - **Hailo-8 hardware:** Uses **YOLOv6n** (default: `yolov6n.hef`)
 - **Hailo-8L hardware:** Uses **YOLOv6n** (default: `yolov6n.hef`)
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **Hailo-8/Hailo-8L** from the detector type dropdown and click **Add**, then set device to `PCIe`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure the model settings:
+
+| Field                                    | Value                   |
+| ---------------------------------------- | ----------------------- |
+| **Object detection model input width**   | `320`                   |
+| **Object detection model input height**  | `320`                   |
+| **Model Input Tensor Shape**             | `nhwc`                  |
+| **Model Input Pixel Color Format**       | `rgb`                   |
+| **Model Input D Type**                   | `int`                   |
+| **Object Detection Model Type**          | `yolo-generic`          |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt` |
+
+The detector automatically selects the default model based on your hardware. Optionally, specify a local model path or URL to override.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -231,9 +355,30 @@ model:
   # just make sure to give it the write configuration based on the model
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### SSD
 
 For SSD-based models, provide either a model path or URL to your compiled SSD model. The integration will first check the local path before downloading if necessary.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **Hailo-8/Hailo-8L** from the detector type dropdown and click **Add**, then set device to `PCIe`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure the model settings:
+
+| Field                                   | Value  |
+| --------------------------------------- | ------ |
+| **Object detection model input width**  | `300`  |
+| **Object detection model input height** | `300`  |
+| **Model Input Tensor Shape**            | `nhwc` |
+| **Model Input Pixel Color Format**      | `rgb`  |
+| **Object Detection Model Type**         | `ssd`  |
+
+Specify the local model path or URL for SSD MobileNet v1.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -255,9 +400,20 @@ model:
   # path: https://hailo-model-zoo.s3.eu-west-2.amazonaws.com/ModelZoo/Compiled/v2.14.0/hailo8l/ssd_mobilenet_v1.hef
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### Custom Models
 
 The Hailo detector supports all YOLO models compiled for Hailo hardware that include post-processing. You can specify a custom URL or a local path to download or use your model directly. If both are provided, the detector checks the local path first.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **Hailo-8/Hailo-8L** from the detector type dropdown and click **Add**, then set device to `PCIe`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure the model settings to match your custom model dimensions and format.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -279,6 +435,9 @@ model:
   # Alternatively, or as a fallback, provide a custom URL:
   # path: https://custom-model-url.com/path/to/model.hef
 ```
+
+</TabItem>
+</ConfigTabs>
 
 For additional ready-to-use models, please visit: https://github.com/hailo-ai/hailo_model_zoo
 
@@ -303,6 +462,14 @@ OpenVINO is supported on 6th Gen Intel platforms (Skylake) and newer. It will al
 
 When using many cameras one detector may not be enough to keep up. Multiple detectors can be defined assuming GPU resources are available. An example configuration would be:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add** to add multiple detectors, each targeting `GPU` or `NPU`.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   ov_0:
@@ -312,6 +479,9 @@ detectors:
     type: openvino
     device: GPU # or NPU
 ```
+
+</TabItem>
+</ConfigTabs>
 
 :::
 
@@ -335,6 +505,23 @@ An OpenVINO model is provided in the container at `/openvino-model/ssdlite_mobil
 
 Use the model configuration shown below when using the OpenVINO detector with the default OpenVINO model:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add**, then set device to `GPU` (or `NPU`). Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                      |
+| ---------------------------------------- | ------------------------------------------ |
+| **Object detection model input width**   | `300`                                      |
+| **Object detection model input height**  | `300`                                      |
+| **Model Input Tensor Shape**             | `nhwc`                                     |
+| **Model Input Pixel Color Format**       | `bgr`                                      |
+| **Custom object detector model path**    | `/openvino-model/ssdlite_mobilenet_v2.xml` |
+| **Label map for custom object detector** | `/openvino-model/coco_91cl_bkgr.txt`       |
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   ov:
@@ -350,6 +537,9 @@ model:
   labelmap_path: /openvino-model/coco_91cl_bkgr.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 </details>
 
 #### YOLOX
@@ -363,7 +553,25 @@ This detector also supports YOLOX. Frigate does not come with any YOLOX models p
 <details>
   <summary>YOLO-NAS Setup & Config</summary>
 
-After placing the downloaded onnx model in your config folder, you can use the following configuration:
+After placing the downloaded onnx model in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add**, then set device to `GPU`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                             |
+| ---------------------------------------- | ------------------------------------------------- |
+| **Object Detection Model Type**          | `yolonas`                                         |
+| **Object detection model input width**   | `320` (should match whatever was set in notebook) |
+| **Object detection model input height**  | `320` (should match whatever was set in notebook) |
+| **Model Input Tensor Shape**             | `nchw`                                            |
+| **Model Input Pixel Color Format**       | `bgr`                                             |
+| **Custom object detector model path**    | `/config/yolo_nas_s.onnx`                         |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                           |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -380,6 +588,9 @@ model:
   path: /config/yolo_nas_s.onnx
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
@@ -404,7 +615,25 @@ If you are using a Frigate+ model, you should not define any of the below `model
 
 :::
 
-After placing the downloaded onnx model in your config folder, you can use the following configuration:
+After placing the downloaded onnx model in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add**, then set device to `GPU` (or `NPU`). Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| **Object Detection Model Type**          | `yolo-generic`                                           |
+| **Object detection model input width**   | `320` (should match the imgsize set during model export) |
+| **Object detection model input height**  | `320` (should match the imgsize set during model export) |
+| **Model Input Tensor Shape**             | `nchw`                                                   |
+| **Model Input D Type**                   | `float`                                                  |
+| **Custom object detector model path**    | `/config/model_cache/yolo.onnx`                          |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                  |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -421,6 +650,9 @@ model:
   path: /config/model_cache/yolo.onnx
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
@@ -439,7 +671,24 @@ Due to the size and complexity of the RF-DETR model, it is only recommended to b
 <details>
   <summary>RF-DETR Setup & Config</summary>
 
-After placing the downloaded onnx model in your `config/model_cache` folder, you can use the following configuration:
+After placing the downloaded onnx model in your `config/model_cache` folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add**, then set device to `GPU`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                   | Value                             |
+| --------------------------------------- | --------------------------------- |
+| **Object Detection Model Type**         | `rfdetr`                          |
+| **Object detection model input width**  | `320`                             |
+| **Object detection model input height** | `320`                             |
+| **Model Input Tensor Shape**            | `nchw`                            |
+| **Model Input D Type**                  | `float`                           |
+| **Custom object detector model path**   | `/config/model_cache/rfdetr.onnx` |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -456,6 +705,9 @@ model:
   path: /config/model_cache/rfdetr.onnx
 ```
 
+</TabItem>
+</ConfigTabs>
+
 </details>
 
 #### D-FINE
@@ -471,7 +723,25 @@ Currently D-FINE models only run on OpenVINO in CPU mode, GPUs currently fail to
 <details>
   <summary>D-FINE Setup & Config</summary>
 
-After placing the downloaded onnx model in your config/model_cache folder, you can use the following configuration:
+After placing the downloaded onnx model in your config/model_cache folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **OpenVINO** from the detector type dropdown and click **Add**, then set device to `CPU`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                              |
+| ---------------------------------------- | ---------------------------------- |
+| **Object Detection Model Type**          | `dfine`                            |
+| **Object detection model input width**   | `640`                              |
+| **Object detection model input height**  | `640`                              |
+| **Model Input Tensor Shape**             | `nchw`                             |
+| **Model Input D Type**                   | `float`                            |
+| **Custom object detector model path**    | `/config/model_cache/dfine-s.onnx` |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`            |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -488,6 +758,9 @@ model:
   path: /config/model_cache/dfine-s.onnx
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
@@ -506,12 +779,23 @@ The NPU in Apple Silicon can't be accessed from within a container, so the [Appl
 
 Using the detector config below will connect to the client:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ZMQ IPC** from the detector type dropdown and click **Add**, then set the endpoint to `tcp://host.docker.internal:5555`.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   apple-silicon:
     type: zmq
     endpoint: tcp://host.docker.internal:5555
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ### Apple Silicon Supported Models
 
@@ -529,6 +813,24 @@ The YOLO detector has been designed to support YOLOv3, YOLOv4, YOLOv7, and YOLOv
 
 When Frigate is started with the following config it will connect to the detector client and transfer the model automatically:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ZMQ IPC** from the detector type dropdown and click **Add**, then set the endpoint to `tcp://host.docker.internal:5555`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| **Object Detection Model Type**          | `yolo-generic`                                           |
+| **Object detection model input width**   | `320` (should match the imgsize set during model export) |
+| **Object detection model input height**  | `320` (should match the imgsize set during model export) |
+| **Model Input Tensor Shape**             | `nchw`                                                   |
+| **Model Input D Type**                   | `float`                                                  |
+| **Custom object detector model path**    | `/config/model_cache/yolo.onnx`                          |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                  |
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   apple-silicon:
@@ -545,13 +847,16 @@ model:
   labelmap_path: /labelmap/coco-80.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
 ## AMD/ROCm GPU detector
 
 ### Setup
 
-Support for AMD GPUs is provided using the [ONNX detector](#ONNX). In order to utilize the AMD GPU for object detection use a frigate docker image with `-rocm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-rocm`.
+Support for AMD GPUs is provided using the [ONNX detector](#onnx). In order to utilize the AMD GPU for object detection use a frigate docker image with `-rocm` suffix, for example `ghcr.io/blakeblackshear/frigate:stable-rocm`.
 
 ### Docker settings for GPU access
 
@@ -566,7 +871,7 @@ $ docker run --device=/dev/kfd --device=/dev/dri  \
 
 When using Docker Compose:
 
-```yaml
+```yaml {4-6}
 services:
   frigate:
     ...
@@ -597,7 +902,7 @@ $ docker run -e HSA_OVERRIDE_GFX_VERSION=10.0.0 \
 
 When using Docker Compose:
 
-```yaml
+```yaml {4-5}
 services:
   frigate:
     ...
@@ -654,11 +959,9 @@ ONNX is an open format for building machine learning models, Frigate supports ru
 If the correct build is used for your GPU then the GPU will be detected and used automatically.
 
 - **AMD**
-
   - ROCm will automatically be detected and used with the ONNX detector in the `-rocm` Frigate image.
 
 - **Intel**
-
   - OpenVINO will automatically be detected and used with the ONNX detector in the default Frigate image.
 
 - **Nvidia**
@@ -671,6 +974,14 @@ If the correct build is used for your GPU then the GPU will be detected and used
 
 When using many cameras one detector may not be enough to keep up. Multiple detectors can be defined assuming GPU resources are available. An example configuration would be:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add** to add multiple detectors.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   onnx_0:
@@ -678,6 +989,9 @@ detectors:
   onnx_1:
     type: onnx
 ```
+
+</TabItem>
+</ConfigTabs>
 
 :::
 
@@ -706,7 +1020,25 @@ If you are using a Frigate+ YOLO-NAS model, you should not define any of the bel
 
 :::
 
-After placing the downloaded onnx model in your config folder, you can use the following configuration:
+After placing the downloaded onnx model in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                             |
+| ---------------------------------------- | ------------------------------------------------- |
+| **Object Detection Model Type**          | `yolonas`                                         |
+| **Object detection model input width**   | `320` (should match whatever was set in notebook) |
+| **Object detection model input height**  | `320` (should match whatever was set in notebook) |
+| **Model Input Pixel Color Format**       | `bgr`                                             |
+| **Model Input Tensor Shape**             | `nchw`                                            |
+| **Custom object detector model path**    | `/config/yolo_nas_s.onnx`                         |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                           |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -722,6 +1054,9 @@ model:
   path: /config/yolo_nas_s.onnx
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 </details>
 
@@ -744,7 +1079,25 @@ If you are using a Frigate+ model, you should not define any of the below `model
 
 :::
 
-After placing the downloaded onnx model in your config folder, you can use the following configuration:
+After placing the downloaded onnx model in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| **Object Detection Model Type**          | `yolo-generic`                                           |
+| **Object detection model input width**   | `320` (should match the imgsize set during model export) |
+| **Object detection model input height**  | `320` (should match the imgsize set during model export) |
+| **Model Input Tensor Shape**             | `nchw`                                                   |
+| **Model Input D Type**                   | `float`                                                  |
+| **Custom object detector model path**    | `/config/model_cache/yolo.onnx`                          |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                  |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -761,6 +1114,9 @@ model:
   labelmap_path: /labelmap/coco-80.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 </details>
 
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
@@ -772,7 +1128,25 @@ Note that the labelmap uses a subset of the complete COCO label set that has onl
 <details>
   <summary>YOLOx Setup & Config</summary>
 
-After placing the downloaded onnx model in your config folder, you can use the following configuration:
+After placing the downloaded onnx model in your config folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                    |
+| ---------------------------------------- | -------------------------------------------------------- |
+| **Object Detection Model Type**          | `yolox`                                                  |
+| **Object detection model input width**   | `416` (should match the imgsize set during model export) |
+| **Object detection model input height**  | `416` (should match the imgsize set during model export) |
+| **Model Input Tensor Shape**             | `nchw`                                                   |
+| **Model Input D Type**                   | `float_denorm`                                           |
+| **Custom object detector model path**    | `/config/model_cache/yolox_tiny.onnx`                    |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                  |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -789,6 +1163,9 @@ model:
   labelmap_path: /labelmap/coco-80.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 Note that the labelmap uses a subset of the complete COCO label set that has only 80 objects.
 
 </details>
@@ -800,7 +1177,24 @@ Note that the labelmap uses a subset of the complete COCO label set that has onl
 <details>
   <summary>RF-DETR Setup & Config</summary>
 
-After placing the downloaded onnx model in your `config/model_cache` folder, you can use the following configuration:
+After placing the downloaded onnx model in your `config/model_cache` folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                   | Value                             |
+| --------------------------------------- | --------------------------------- |
+| **Object Detection Model Type**         | `rfdetr`                          |
+| **Object detection model input width**  | `320`                             |
+| **Object detection model input height** | `320`                             |
+| **Model Input Tensor Shape**            | `nchw`                            |
+| **Model Input D Type**                  | `float`                           |
+| **Custom object detector model path**   | `/config/model_cache/rfdetr.onnx` |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -816,6 +1210,9 @@ model:
   path: /config/model_cache/rfdetr.onnx
 ```
 
+</TabItem>
+</ConfigTabs>
+
 </details>
 
 #### D-FINE
@@ -825,7 +1222,25 @@ model:
 <details>
   <summary>D-FINE Setup & Config</summary>
 
-After placing the downloaded onnx model in your `config/model_cache` folder, you can use the following configuration:
+After placing the downloaded onnx model in your `config/model_cache` folder, use the following configuration:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **ONNX** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                       |
+| ---------------------------------------- | ------------------------------------------- |
+| **Object Detection Model Type**          | `dfine`                                     |
+| **Object detection model input width**   | `640`                                       |
+| **Object detection model input height**  | `640`                                       |
+| **Model Input Tensor Shape**             | `nchw`                                      |
+| **Model Input D Type**                   | `float`                                     |
+| **Custom object detector model path**    | `/config/model_cache/dfine_m_obj2coco.onnx` |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                     |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -841,6 +1256,9 @@ model:
   path: /config/model_cache/dfine_m_obj2coco.onnx
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 </details>
 
@@ -860,6 +1278,14 @@ The number of threads used by the interpreter can be specified using the `"num_t
 
 A TensorFlow Lite model is provided in the container at `/cpu_model.tflite` and is used by this detector type by default. To provide your own model, bind mount the file into the container and provide the path with `model.path`.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **CPU** from the detector type dropdown and click **Add**. Configure the number of threads and click **Add** again to add additional CPU detectors as needed (one per camera is recommended).
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   cpu1:
@@ -873,6 +1299,9 @@ model:
   path: "/custom_model.tflite"
 ```
 
+</TabItem>
+</ConfigTabs>
+
 When using CPU detectors, you can add one CPU detector per camera. Adding more detectors than the number of cameras should not improve performance.
 
 ## Deepstack / CodeProject.AI Server Detector
@@ -883,7 +1312,15 @@ The Deepstack / CodeProject.AI Server detector for Frigate allows you to integra
 
 To get started with CodeProject.AI, visit their [official website](https://www.codeproject.com/Articles/5322557/CodeProject-AI-Server-AI-the-easy-way) to follow the instructions to download and install the AI server on your preferred device. Detailed setup instructions for CodeProject.AI are outside the scope of the Frigate documentation.
 
-To integrate CodeProject.AI into Frigate, you'll need to make the following changes to your Frigate configuration file:
+To integrate CodeProject.AI into Frigate, configure the detector as follows:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **DeepStack** from the detector type dropdown and click **Add**. Set the API URL to point to your CodeProject.AI server (e.g., `http://<your_codeproject_ai_server_ip>:<port>/v1/vision/detection`).
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -892,6 +1329,9 @@ detectors:
     type: deepstack
     api_timeout: 0.1 # seconds
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Replace `<your_codeproject_ai_server_ip>` and `<port>` with the IP address and port of your CodeProject.AI server.
 
@@ -913,6 +1353,14 @@ To configure the MemryX detector, use the following example configuration:
 
 #### Single PCIe MemryX MX3
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add**, then set device to `PCIe:0`.
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   memx0:
@@ -920,7 +1368,18 @@ detectors:
     device: PCIe:0
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### Multiple PCIe MemryX MX3 Modules
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add** to add multiple detectors, specifying `PCIe:0`, `PCIe:1`, `PCIe:2`, etc. as the device for each.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -936,6 +1395,9 @@ detectors:
     type: memryx
     device: PCIe:2
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ### Supported Models
 
@@ -954,6 +1416,23 @@ The input size for **YOLO-NAS** can be set to either **320x320** (default) or **
 ##### Configuration
 
 Below is the recommended configuration for using the **YOLO-NAS** (small) model with the MemryX detector:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add**, then set device to `PCIe:0`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                             |
+| ---------------------------------------- | ------------------------------------------------- |
+| **Object Detection Model Type**          | `yolonas`                                         |
+| **Object detection model input width**   | `320` (can be set to `640` for higher resolution) |
+| **Object detection model input height**  | `320` (can be set to `640` for higher resolution) |
+| **Model Input Tensor Shape**             | `nchw`                                            |
+| **Model Input D Type**                   | `float`                                           |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                           |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -975,6 +1454,9 @@ model:
   # └── yolonas_post.onnx    (optional; only if the model includes a cropped post-processing network)
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### YOLOv9
 
 The YOLOv9s model included in this detector is downloaded from [the original GitHub](https://github.com/WongKinYiu/yolov9) like in the [Models Section](#yolov9-1) and compiled to DFP with [mx_nc](https://developer.memryx.com/tools/neural_compiler.html#usage).
@@ -982,6 +1464,23 @@ The YOLOv9s model included in this detector is downloaded from [the original Git
 ##### Configuration
 
 Below is the recommended configuration for using the **YOLOv9** (small) model with the MemryX detector:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add**, then set device to `PCIe:0`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                             |
+| ---------------------------------------- | ------------------------------------------------- |
+| **Object Detection Model Type**          | `yolo-generic`                                    |
+| **Object detection model input width**   | `320` (can be set to `640` for higher resolution) |
+| **Object detection model input height**  | `320` (can be set to `640` for higher resolution) |
+| **Model Input Tensor Shape**             | `nchw`                                            |
+| **Model Input D Type**                   | `float`                                           |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                           |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -1002,6 +1501,9 @@ model:
   # ├── yolov9.dfp          (a file ending with .dfp)
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### YOLOX
 
 The model is sourced from the [OpenCV Model Zoo](https://github.com/opencv/opencv_zoo) and precompiled to DFP.
@@ -1009,6 +1511,23 @@ The model is sourced from the [OpenCV Model Zoo](https://github.com/opencv/openc
 ##### Configuration
 
 Below is the recommended configuration for using the **YOLOX** (small) model with the MemryX detector:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add**, then set device to `PCIe:0`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                   |
+| ---------------------------------------- | ----------------------- |
+| **Object Detection Model Type**          | `yolox`                 |
+| **Object detection model input width**   | `640`                   |
+| **Object detection model input height**  | `640`                   |
+| **Model Input Tensor Shape**             | `nchw`                  |
+| **Model Input D Type**                   | `float_denorm`          |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt` |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -1029,6 +1548,9 @@ model:
   # ├── yolox.dfp          (a file ending with .dfp)
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### SSDLite MobileNet v2
 
 The model is sourced from the [OpenMMLab Model Zoo](https://mmdeploy-oss.openmmlab.com/model/mmdet-det/ssdlite-e8679f.onnx) and has been converted to DFP.
@@ -1036,6 +1558,23 @@ The model is sourced from the [OpenMMLab Model Zoo](https://mmdeploy-oss.openmml
 ##### Configuration
 
 Below is the recommended configuration for using the **SSDLite MobileNet v2** model with the MemryX detector:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **MemryX** from the detector type dropdown and click **Add**, then set device to `PCIe:0`. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                   |
+| ---------------------------------------- | ----------------------- |
+| **Object Detection Model Type**          | `ssd`                   |
+| **Object detection model input width**   | `320`                   |
+| **Object detection model input height**  | `320`                   |
+| **Model Input Tensor Shape**             | `nchw`                  |
+| **Model Input D Type**                   | `float`                 |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt` |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -1056,6 +1595,9 @@ model:
   # ├── ssdlite_mobilenet.dfp          (a file ending with .dfp)
   # └── ssdlite_mobilenet_post.onnx    (optional; only if the model includes a cropped post-processing network)
 ```
+
+</TabItem>
+</ConfigTabs>
 
 #### Using a Custom Model
 
@@ -1156,6 +1698,23 @@ The TensorRT detector uses `.trt` model files that are located in `/config/model
 
 Use the config below to work with generated TRT models:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **TensorRT** from the detector type dropdown and click **Add**, then set the device to `0` (the default GPU index). Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                        |
+| ---------------------------------------- | ------------------------------------------------------------ |
+| **Custom object detector model path**    | `/config/model_cache/tensorrt/yolov7-320.trt`                |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                      |
+| **Model Input Tensor Shape**             | `nchw`                                                       |
+| **Model Input Pixel Color Format**       | `rgb`                                                        |
+| **Object detection model input width**   | `320` (MUST match the chosen model, e.g., yolov7-320 -> 320) |
+| **Object detection model input height**  | `320` (MUST match the chosen model, e.g., yolov7-320 -> 320) |
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors:
   tensorrt:
@@ -1170,6 +1729,9 @@ model:
   width: 320 # MUST match the chosen model i.e yolov7-320 -> 320, yolov4-416 -> 416
   height: 320 # MUST match the chosen model i.e yolov7-320 -> 320 yolov4-416 -> 416
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ## Synaptics
 
@@ -1193,6 +1755,22 @@ A synap model is provided in the container at /mobilenet.synap and is used by th
 
 Use the model configuration shown below when using the synaptics detector with the default synap model:
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **Synaptics** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                        |
+| ---------------------------------------- | ---------------------------- |
+| **Custom object detector model path**    | `/synaptics/mobilenet.synap` |
+| **Object detection model input width**   | `224`                        |
+| **Object detection model input height**  | `224`                        |
+| **Model Input Tensor Shape**             | `nhwc`                       |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`      |
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors: # required
   synap_npu: # required
@@ -1202,9 +1780,12 @@ model: # required
   path: /synaptics/mobilenet.synap # required
   width: 224 # required
   height: 224 # required
-  tensor_format: nhwc # default value (optional. If you change the model, it is required)
+  input_tensor: nhwc # default value (optional. If you change the model, it is required)
   labelmap_path: /labelmap/coco-80.txt # required
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ## Rockchip platform
 
@@ -1218,9 +1799,23 @@ Hardware accelerated object detection is supported on the following SoCs:
 
 This implementation uses the [Rockchip's RKNN-Toolkit2](https://github.com/airockchip/rknn-toolkit2/), version v2.3.2.
 
+:::info
+
+If no custom model is provided, the RKNN detector downloads a default model from GitHub on first startup. Once cached, the model works fully offline. See [Network Requirements](/frigate/network_requirements#hardware-specific-detector-models) for details.
+
+:::
+
 :::tip
 
 When using many cameras one detector may not be enough to keep up. Multiple detectors can be defined assuming NPU resources are available. An example configuration would be:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **RKNN** from the detector type dropdown and click **Add** to add multiple detectors, each with `num_cores` set to `0` for automatic selection.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 detectors:
@@ -1231,6 +1826,9 @@ detectors:
     type: rknn
     num_cores: 0
 ```
+
+</TabItem>
+</ConfigTabs>
 
 :::
 
@@ -1253,6 +1851,14 @@ $ cat /sys/kernel/debug/rknpu/load
 
 This `config.yml` shows all relevant options to configure the detector and explains them. All values shown are the default values (except for two). Lines that are required at least to use the detector are labeled as required, all other lines are optional.
 
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **RKNN** from the detector type dropdown and click **Add**. Set `num_cores` to `0` for automatic selection (increase for better performance on multicore NPUs, e.g., set to `3` on rk3588).
+
+</TabItem>
+<TabItem value="yaml">
+
 ```yaml
 detectors: # required
   rknn: # required
@@ -1262,6 +1868,9 @@ detectors: # required
     # increase for better performance if you have a multicore NPU e.g. set to 3 on rk3588
     num_cores: 0
 ```
+
+</TabItem>
+</ConfigTabs>
 
 The inference time was determined on a rk3588 with 3 NPU cores.
 
@@ -1278,6 +1887,24 @@ The inference time was determined on a rk3588 with 3 NPU cores.
 - You can also provide your own `.rknn` model. You should not save your own models in the `rknn_cache` folder, store them directly in the `model_cache` folder or another subfolder. To convert a model to `.rknn` format see the `rknn-toolkit2` (requires a x86 machine). Note, that there is only post-processing for the supported models.
 
 #### YOLO-NAS
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                                                   |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| **Custom object detector model path**    | `deci-fp16-yolonas_s` (or `deci-fp16-yolonas_m`, `deci-fp16-yolonas_l`) |
+| **Object Detection Model Type**          | `yolonas`                                                               |
+| **Object detection model input width**   | `320`                                                                   |
+| **Object detection model input height**  | `320`                                                                   |
+| **Model Input Pixel Color Format**       | `bgr`                                                                   |
+| **Model Input Tensor Shape**             | `nhwc`                                                                  |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                                                 |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 model: # required
@@ -1296,6 +1923,9 @@ model: # required
   labelmap_path: /labelmap/coco-80.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 :::warning
 
 The pre-trained YOLO-NAS weights from DeciAI are subject to their license and can't be used commercially. For more information, see: https://docs.deci.ai/super-gradients/latest/LICENSE.YOLONAS.html
@@ -1303,6 +1933,23 @@ The pre-trained YOLO-NAS weights from DeciAI are subject to their license and ca
 :::
 
 #### YOLO (v9)
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                              |
+| ---------------------------------------- | -------------------------------------------------- |
+| **Custom object detector model path**    | `frigate-fp16-yolov9-t` (or other yolov9 variants) |
+| **Object Detection Model Type**          | `yolo-generic`                                     |
+| **Object detection model input width**   | `320`                                              |
+| **Object detection model input height**  | `320`                                              |
+| **Model Input Tensor Shape**             | `nhwc`                                             |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                            |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 model: # required
@@ -1322,7 +1969,27 @@ model: # required
   labelmap_path: /labelmap/coco-80.txt
 ```
 
+</TabItem>
+</ConfigTabs>
+
 #### YOLOx
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                                          |
+| ---------------------------------------- | ---------------------------------------------- |
+| **Custom object detector model path**    | `rock-i8-yolox_nano` (or other yolox variants) |
+| **Object Detection Model Type**          | `yolox`                                        |
+| **Object detection model input width**   | `416`                                          |
+| **Object detection model input height**  | `416`                                          |
+| **Model Input Tensor Shape**             | `nhwc`                                         |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt`                        |
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 model: # required
@@ -1340,6 +2007,9 @@ model: # required
   input_tensor: nhwc
   labelmap_path: /labelmap/coco-80.txt
 ```
+
+</TabItem>
+</ConfigTabs>
 
 ### Converting your own onnx model to rknn format
 
@@ -1396,7 +2066,15 @@ degirum_detector:
 
 All supported hardware will automatically be found on your AI server host as long as relevant runtimes and drivers are properly installed on your machine. Refer to [DeGirum's docs site](https://docs.degirum.com/pysdk/runtimes-and-drivers) if you have any trouble.
 
-Once completed, changing the `config.yml` file is simple.
+Once completed, configure the detector as follows:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **DeGirum** from the detector type dropdown and click **Add**. Set the location to your AI server (e.g., service name, container name, or `host:port`), the zoo to `degirum/public`, and provide your authentication token if needed.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 degirum_detector:
@@ -1405,6 +2083,9 @@ degirum_detector:
   zoo: degirum/public # DeGirum's public model zoo. Zoo name should be in format "workspace/zoo_name". degirum/public is available to everyone, so feel free to use it if you don't know where to start. If you aren't pulling a model from the AI Hub, leave this and 'token' blank.
   token: dg_example_token # For authentication with the AI Hub. Get this token through the "tokens" section on the main page of the [AI Hub](https://hub.degirum.com). This can be left blank if you're pulling a model from the public zoo and running inferences on your local hardware using @local or a local DeGirum AI Server
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Setting up a model in the `config.yml` is similar to setting up an AI server.
 You can set it to:
@@ -1428,7 +2109,15 @@ It is also possible to eliminate the need for an AI server and run the hardware 
 
 1. Ensuring that the frigate docker container has the runtime you want to use. So for instance, running `@local` for Hailo means making sure the container you're using has the Hailo runtime installed.
 2. To double check the runtime is detected by the DeGirum detector, make sure the `degirum sys-info` command properly shows whatever runtimes you mean to install.
-3. Create a DeGirum detector in your `config.yml` file.
+3. Create a DeGirum detector in your configuration.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **DeGirum** from the detector type dropdown and click **Add**. Set the location to `@local`, the zoo to `degirum/public`, and provide your authentication token.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 degirum_detector:
@@ -1437,6 +2126,9 @@ degirum_detector:
   zoo: degirum/public # DeGirum's public model zoo. Zoo name should be in format "workspace/zoo_name". degirum/public is available to everyone, so feel free to use it if you don't know where to start.
   token: dg_example_token # For authentication with the AI Hub. Get this token through the "tokens" section on the main page of the [AI Hub](https://hub.degirum.com). This can be left blank if you're pulling a model from the public zoo and running inferences on your local hardware using @local or a local DeGirum AI Server
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Once `degirum_detector` is setup, you can choose a model through 'model' section in the `config.yml` file.
 
@@ -1454,7 +2146,15 @@ If you do not possess whatever hardware you want to run, there's also the option
 
 1. Sign up at [DeGirum's AI Hub](https://hub.degirum.com).
 2. Get an access token.
-3. Create a DeGirum detector in your `config.yml` file.
+3. Create a DeGirum detector in your configuration.
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **DeGirum** from the detector type dropdown and click **Add**. Set the location to `@cloud`, the zoo to `degirum/public`, and provide your authentication token.
+
+</TabItem>
+<TabItem value="yaml">
 
 ```yaml
 degirum_detector:
@@ -1463,6 +2163,9 @@ degirum_detector:
   zoo: degirum/public # DeGirum's public model zoo. Zoo name should be in format "workspace/zoo_name". degirum/public is available to everyone, so feel free to use it if you don't know where to start.
   token: dg_example_token # For authentication with the AI Hub. Get this token through the "tokens" section on the main page of the (AI Hub)[https://hub.degirum.com).
 ```
+
+</TabItem>
+</ConfigTabs>
 
 Once `degirum_detector` is setup, you can choose a model through 'model' section in the `config.yml` file.
 
@@ -1473,6 +2176,69 @@ model:
   height: 300 # height is in the model name as the second number in the "int"x"int" section
   input_pixel_format: rgb/bgr # look at the model.json to figure out which to put here
 ```
+
+## AXERA
+
+Hardware accelerated object detection is supported on the following SoCs:
+
+- AX650N
+- AX8850N
+
+This implementation uses the [AXera Pulsar2 Toolchain](https://huggingface.co/AXERA-TECH/Pulsar2).
+
+See the [installation docs](../frigate/installation.md#axera) for information on configuring the AXEngine hardware.
+
+:::info
+
+The AXEngine detector downloads its default model from HuggingFace on first startup. Once cached, the model works fully offline. See [Network Requirements](/frigate/network_requirements#hardware-specific-detector-models) for details.
+
+:::
+
+### Configuration
+
+When configuring the AXEngine detector, you have to specify the model name.
+
+#### yolov9
+
+A yolov9 model is provided in the container at `/axmodels` and is used by this detector type by default.
+
+Use the model configuration shown below when using the axengine detector with the default axmodel:
+
+<ConfigTabs>
+<TabItem value="ui">
+
+Navigate to <NavPath path="Settings > System > Detector hardware" /> and select **AXEngine NPU** from the detector type dropdown and click **Add**. Then navigate to <NavPath path="Settings > System > Detection model" /> and configure:
+
+| Field                                    | Value                   |
+| ---------------------------------------- | ----------------------- |
+| **Custom object detector model path**    | `frigate-yolov9-tiny`   |
+| **Object Detection Model Type**          | `yolo-generic`          |
+| **Object detection model input width**   | `320`                   |
+| **Object detection model input height**  | `320`                   |
+| **Model Input D Type**                   | `int`                   |
+| **Model Input Pixel Color Format**       | `bgr`                   |
+| **Label map for custom object detector** | `/labelmap/coco-80.txt` |
+
+</TabItem>
+<TabItem value="yaml">
+
+```yaml
+detectors:
+  axengine:
+    type: axengine
+
+model:
+  path: frigate-yolov9-tiny
+  model_type: yolo-generic
+  width: 320
+  height: 320
+  input_dtype: int
+  input_pixel_format: bgr
+  labelmap_path: /labelmap/coco-80.txt
+```
+
+</TabItem>
+</ConfigTabs>
 
 # Models
 
@@ -1514,11 +2280,11 @@ RF-DETR can be exported as ONNX by running the command below. You can copy and p
 
 ```sh
 docker build . --build-arg MODEL_SIZE=Nano --rm --output . -f- <<'EOF'
-FROM python:3.11 AS build
+FROM python:3.12 AS build
 RUN apt-get update && apt-get install --no-install-recommends -y libgl1 && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.8.0 /uv /bin/
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /bin/
 WORKDIR /rfdetr
-RUN uv pip install --system rfdetr[onnxexport] torch==2.8.0 onnx==1.19.1 onnxscript
+RUN uv pip install --system rfdetr[onnxexport] torch==2.8.0 onnx==1.19.1 transformers==4.57.6 onnxscript
 ARG MODEL_SIZE
 RUN python3 -c "from rfdetr import RFDETR${MODEL_SIZE}; x = RFDETR${MODEL_SIZE}(resolution=320); x.export(simplify=True)"
 FROM scratch
@@ -1556,19 +2322,23 @@ cd tensorrt_demos/yolo
 python3 yolo_to_onnx.py -m yolov7-320
 ```
 
-#### YOLOv9
+#### YOLOv9 for Google Coral Support
+
+[Download the model](https://github.com/dbro/frigate-detector-edgetpu-yolo9/releases/download/v1.0/yolov9-s-relu6-best_320_int8_edgetpu.tflite), bind mount the file into the container, and provide the path with `model.path`. Note that the linked model requires a 17-label [labelmap file](https://raw.githubusercontent.com/dbro/frigate-detector-edgetpu-yolo9/refs/heads/main/labels-coco17.txt) that includes only 17 COCO classes.
+
+#### YOLOv9 for other detectors
 
 YOLOv9 model can be exported as ONNX using the command below. You can copy and paste the whole thing to your terminal and execute, altering `MODEL_SIZE=t` and `IMG_SIZE=320` in the first line to the [model size](https://github.com/WongKinYiu/yolov9#performance) you would like to convert (available model sizes are `t`, `s`, `m`, `c`, and `e`, common image sizes are `320` and `640`).
 
 ```sh
 docker build . --build-arg MODEL_SIZE=t --build-arg IMG_SIZE=320 --output . -f- <<'EOF'
 FROM python:3.11 AS build
-RUN apt-get update && apt-get install --no-install-recommends -y libgl1 && rm -rf /var/lib/apt/lists/*
-COPY --from=ghcr.io/astral-sh/uv:0.8.0 /uv /bin/
+RUN apt-get update && apt-get install --no-install-recommends -y cmake libgl1 && rm -rf /var/lib/apt/lists/*
+COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /bin/
 WORKDIR /yolov9
 ADD https://github.com/WongKinYiu/yolov9.git .
 RUN uv pip install --system -r requirements.txt
-RUN uv pip install --system onnx==1.18.0 onnxruntime onnx-simplifier>=0.4.1 onnxscript
+RUN uv pip install --system onnx==1.18.0 onnxruntime onnx-simplifier==0.4.* onnxscript
 ARG MODEL_SIZE
 ARG IMG_SIZE
 ADD https://github.com/WongKinYiu/yolov9/releases/download/v0.1/yolov9-${MODEL_SIZE}-converted.pt yolov9-${MODEL_SIZE}.pt
