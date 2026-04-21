@@ -40,7 +40,9 @@
       "deletedCategory_one": "Deleted {{count}} class",
       "deletedCategory_other": "Deleted {{count}} classes",
       "deletedImage_one": "Deleted {{count}} image",
-      "deletedImage_other": "Deleted {{count}} images"
+      "deletedImage_other": "Deleted {{count}} images",
+      "batchCategorized_one": "Successfully classified {{count}} image",
+      "batchCategorized_other": "Successfully classified {{count}} images"
     },
     "error": {
       "deleteImageFailed": "Failed to delete: {{errorMessage}}",
@@ -52,7 +54,9 @@
       "trainingFailedToStart": "Failed to start model training: {{errorMessage}}",
       "updateModelFailed": "Failed to update model: {{errorMessage}}",
       "renameCategoryFailed": "Failed to rename class: {{errorMessage}}",
-      "reclassifyFailed": "Failed to reclassify image: {{errorMessage}}"
+      "reclassifyFailed": "Failed to reclassify image: {{errorMessage}}",
+      "batchCategorizeFailed_one": "Failed to classify {{count}} image",
+      "batchCategorizeFailed_other": "Failed to classify {{count}} images"
     },
     "warning": {
       "partialBatchCategorized": "Classified {{success}} of {{total}} images successfully."
