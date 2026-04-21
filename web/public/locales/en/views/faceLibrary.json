@@ -89,8 +89,9 @@
       "renamedFace": "Successfully renamed face to {{name}}",
       "trainedFace": "Successfully trained face.",
       "reclassifiedFace": "Successfully reclassified face.",
-      "batchTrainedFaces": "Successfully trained {{count}} faces.",
-      "updatedFaceScore": "Successfully updated face score to {{name}} ({{score}})."
+      "updatedFaceScore": "Successfully updated face score to {{name}} ({{score}}).",
+      "batchTrainedFaces_one": "Successfully trained {{count}} face.",
+      "batchTrainedFaces_other": "Successfully trained {{count}} faces."
     },
     "error": {
       "uploadingImageFailed": "Failed to upload image: {{errorMessage}}",
@@ -100,8 +101,9 @@
       "renameFaceFailed": "Failed to rename face: {{errorMessage}}",
       "trainFailed": "Failed to train: {{errorMessage}}",
       "reclassifyFailed": "Failed to reclassify face: {{errorMessage}}",
-      "batchTrainFailed": "Failed to train {{count}} faces.",
-      "updateFaceScoreFailed": "Failed to update face score: {{errorMessage}}"
+      "updateFaceScoreFailed": "Failed to update face score: {{errorMessage}}",
+      "batchTrainFailed_one": "Failed to train {{count}} face.",
+      "batchTrainFailed_other": "Failed to train {{count}} faces."
     },
     "warning": {
       "partialBatchTrained": "Trained {{success}} of {{total}} faces successfully."
