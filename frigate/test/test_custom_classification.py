@@ -275,7 +275,7 @@ class TestCustomObjectClassificationIntegration(unittest.TestCase):
         mock_interp.get_tensor.return_value = np.array([[score, 1.0 - score]])
         processor.interpreter = mock_interp
 
-        frame = np.zeros((WIDTH, HEIGHT, 3), dtype=np.uint8)
+        frame = np.zeros((WIDTH * 3 // 2, HEIGHT), dtype=np.uint8)
         processor.process_frame(obj_data, frame)
 
         # Give the worker thread time to process the enqueued task.
