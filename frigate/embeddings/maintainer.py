@@ -729,44 +729,47 @@ class EmbeddingMaintainer(threading.Thread):
                     label = result["label"]
                     score = result["score"]
                     classification_type = result["classification_type"]
+                    zones = result.get("zones")
 
                     if classification_type == ObjectClassificationType.sub_label:
                         self.event_metadata_publisher.publish(
                             (object_id, label, score),
                             EventMetadataTypeEnum.sub_label,
                         )
+                        payload: dict[str, Any] = {
+                            "type": TrackedObjectUpdateTypesEnum.classification,
+                            "id": object_id,
+                            "camera": camera,
+                            "timestamp": timestamp,
+                            "model": model_name,
+                            "sub_label": label,
+                            "score": score,
+                        }
+                        if zones:
+                            payload["zones"] = zones
                         self.requestor.send_data(
                             "tracked_object_update",
-                            json.dumps(
-                                {
-                                    "type": TrackedObjectUpdateTypesEnum.classification,
-                                    "id": object_id,
-                                    "camera": camera,
-                                    "timestamp": timestamp,
-                                    "model": model_name,
-                                    "sub_label": label,
-                                    "score": score,
-                                }
-                            ),
+                            json.dumps(payload),
                         )
                     elif classification_type == ObjectClassificationType.attribute:
                         self.event_metadata_publisher.publish(
                             (object_id, model_name, label, score),
                             EventMetadataTypeEnum.attribute.value,
                         )
+                        payload = {
+                            "type": TrackedObjectUpdateTypesEnum.classification,
+                            "id": object_id,
+                            "camera": camera,
+                            "timestamp": timestamp,
+                            "model": model_name,
+                            "attribute": label,
+                            "score": score,
+                        }
+                        if zones:
+                            payload["zones"] = zones
                         self.requestor.send_data(
                             "tracked_object_update",
-                            json.dumps(
-                                {
-                                    "type": TrackedObjectUpdateTypesEnum.classification,
-                                    "id": object_id,
-                                    "camera": camera,
-                                    "timestamp": timestamp,
-                                    "model": model_name,
-                                    "attribute": label,
-                                    "score": score,
-                                }
-                            ),
+                            json.dumps(payload),
                         )
 
     def _embed_thumbnail(self, event_id: str, thumbnail: bytes) -> None:
