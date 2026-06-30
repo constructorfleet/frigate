@@ -4,29 +4,19 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 
+# Mock all modules that have native/missing dependencies before any imports
+for mod in [
+    "zmq",
+    "frigate.comms.zmq_proxy",
+    "frigate.comms.event_metadata_updater",
+    "frigate.config",
+]:
+    sys.modules[mod] = MagicMock()
 
-# Only mock modules that are genuinely unavailable in the current environment.
-# Critically, we must NEVER permanently replace frigate.config or other core
-# modules that other test files depend on — doing so would corrupt the entire
-# test process (alphabetical discovery means this file runs first).
-#
-# In the CI devcontainer all deps (zmq, etc.) are present, so no mocking is
-# needed there.  For lightweight local runs, only mock the two leaf modules
-# that have C-extension requirements, and only when they are not already
-# importable.
-def _maybe_mock(module_name: str) -> None:
-    """Insert a MagicMock stub for *module_name* only when it cannot be imported."""
-    if module_name in sys.modules:
-        return
-    try:
-        __import__(module_name)
-    except ImportError:
-        sys.modules[module_name] = MagicMock()
-
-
-_maybe_mock("zmq")
-_maybe_mock("frigate.comms.zmq_proxy")
-_maybe_mock("frigate.comms.event_metadata_updater")
+# Provide real-looking CameraConfig / FrigateConfig stubs so the type hints work
+_config_mod = sys.modules["frigate.config"]
+_config_mod.CameraConfig = MagicMock
+_config_mod.FrigateConfig = MagicMock
 
 from frigate.camera.activity_manager import CameraActivityManager  # noqa: E402
 

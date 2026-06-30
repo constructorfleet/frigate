@@ -91,9 +91,6 @@ class CameraActivityManager:
 
         # run through every zone, getting a count of objects in that zone right now
         for zone, labels in self.all_zone_labels.items():
-            # Deduplicate objects by object_id before counting
-            # This ensures each unique object is only counted once even if it appears
-            # multiple times (e.g., with custom classifications)
             zone_objects_by_id = {
                 obj["id"]: obj for obj in all_objects if zone in obj["current_zones"]
             }
@@ -101,8 +98,6 @@ class CameraActivityManager:
                 obj["label"].replace("-verified", "")
                 for obj in zone_objects_by_id.values()
             )
-
-            # Same deduplication for active objects
             active_zone_objects_by_id = {
                 obj["id"]: obj
                 for obj in all_objects
@@ -226,15 +221,10 @@ class CameraActivityManager:
     def compare_camera_activity(
         self, camera: str, new_activity: list[dict[str, Any]]
     ) -> None:
-        # Deduplicate objects by object_id before counting
-        # This ensures each unique object is only counted once even if it appears
-        # multiple times (e.g., with custom classifications)
         objects_by_id = {obj["id"]: obj for obj in new_activity}
         all_objects = Counter(
             obj["label"].replace("-verified", "") for obj in objects_by_id.values()
         )
-
-        # Same deduplication for active objects
         active_objects_by_id = {
             obj["id"]: obj for obj in new_activity if not obj["stationary"]
         }
