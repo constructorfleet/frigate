@@ -4,6 +4,20 @@ import sys
 import unittest
 from unittest.mock import MagicMock
 
+# Save the original sys.modules entries so we can restore them after the import.
+# Without this, the mocks would leak into every other test module that imports
+# these packages after this file is discovered, corrupting their imports.
+_MOCKED_MODS = [
+    "zmq",
+    "frigate.comms.zmq_proxy",
+    "frigate.comms.event_metadata_updater",
+    "frigate.config",
+]
+_saved_modules = {mod: sys.modules.get(mod) for mod in _MOCKED_MODS}
+
+# Mock all modules that have native/missing dependencies before any imports
+for _mod in _MOCKED_MODS:
+    sys.modules[_mod] = MagicMock()
 
 # Only mock modules that are genuinely unavailable in the current environment.
 # Critically, we must NEVER permanently replace frigate.config or other core
@@ -29,6 +43,15 @@ _maybe_mock("frigate.comms.zmq_proxy")
 _maybe_mock("frigate.comms.event_metadata_updater")
 
 from frigate.camera.activity_manager import CameraActivityManager  # noqa: E402
+
+# Restore sys.modules immediately so subsequent test-module imports get the
+# real packages, not these mocks.
+for _mod, _original in _saved_modules.items():
+    if _original is None:
+        sys.modules.pop(_mod, None)
+    else:
+        sys.modules[_mod] = _original
+del _mod, _original, _saved_modules, _config_mod, _MOCKED_MODS
 
 
 def _make_config(zone_name="driveway", zone_objects=None, track_objects=None):
