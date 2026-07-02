@@ -647,7 +647,9 @@ async def _connect_onvif_camera(
         return onvif_camera
 
     # Both encodings failed authentication; surface the original fault.
-    raise first_error
+    if first_error is not None:
+        raise first_error
+    raise ONVIFError("Failed to connect to ONVIF device with both password encodings")
 
 
 @router.get(
