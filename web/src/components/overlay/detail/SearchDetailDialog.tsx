@@ -851,6 +851,16 @@ function ObjectDetailsTab({
     return Math.floor(value * 100);
   }, [search]);
 
+  const descriptionGenAiProvider = useMemo(() => {
+    const agents = Object.values(config?.genai ?? {});
+    const descriptionAgent =
+      agents.find((agent) => agent.roles.includes("descriptions")) ?? agents[0];
+
+    return descriptionAgent?.provider
+      ? capitalizeAll(descriptionAgent.provider.replaceAll("_", " "))
+      : t("generativeAI");
+  }, [config, t]);
+
   const averageEstimatedSpeed = useMemo(() => {
     if (!search || !search.data?.average_estimated_speed) {
       return undefined;
@@ -977,10 +987,7 @@ function ObjectDetailsTab({
           if (resp.status == 200) {
             toast.success(
               t("details.item.toast.success.regenerate", {
-                provider: capitalizeAll(
-                  config?.genai.provider.replaceAll("_", " ") ??
-                    t("generativeAI"),
-                ),
+                provider: descriptionGenAiProvider,
               }),
               {
                 position: "top-center",
@@ -996,17 +1003,14 @@ function ObjectDetailsTab({
             "Unknown error";
           toast.error(
             t("details.item.toast.error.regenerate", {
-              provider: capitalizeAll(
-                config?.genai.provider.replaceAll("_", " ") ??
-                  t("generativeAI"),
-              ),
+              provider: descriptionGenAiProvider,
               errorMessage,
             }),
             { position: "top-center" },
           );
         });
     },
-    [search, config, t],
+    [search, descriptionGenAiProvider, t],
   );
 
   const handleSubLabelSave = useCallback(
