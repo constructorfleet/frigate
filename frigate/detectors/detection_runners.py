@@ -197,6 +197,8 @@ class CudaGraphRunner(BaseModelRunner):
             EnrichmentModelTypeEnum.jina_v1.value,
             EnrichmentModelTypeEnum.jina_v2.value,
             EnrichmentModelTypeEnum.yolov9_license_plate.value,
+            EnrichmentModelTypeEnum.arcface.value,
+            EnrichmentModelTypeEnum.facenet.value,
         ]
 
     def __init__(self, session: ort.InferenceSession, cuda_device_id: int):
