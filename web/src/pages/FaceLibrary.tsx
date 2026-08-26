@@ -868,12 +868,6 @@ function TrainingGrid({
   ]);
 
   if (attemptImages.length == 0) {
-    if (isLoading) {
-      return (
-        <ActivityIndicator className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 items-center text-center" />
-      );
-    }
-
     if (faceNames.length == 0) {
       return (
         <EmptyCard

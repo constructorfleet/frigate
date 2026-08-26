@@ -679,6 +679,7 @@ export default function ModelTrainingView({ model }: ModelTrainingViewProps) {
           onClickImages={onClickImages}
           onDelete={onDelete}
           onReclassify={onReclassify}
+          onRefresh={refreshAll}
         />
       )}
     </div>
@@ -924,6 +925,7 @@ type DatasetGridProps = {
   onClickImages: (images: string[], ctrl: boolean) => void;
   onDelete: (ids: string[]) => void;
   onReclassify: (image: string, newCategory: string) => void;
+  onRefresh: () => void;
 };
 function DatasetGrid({
   contentRef,
@@ -936,6 +938,7 @@ function DatasetGrid({
   onClickImages,
   onDelete,
   onReclassify,
+  onRefresh,
 }: DatasetGridProps) {
   const { t } = useTranslation(["views/classificationModel"]);
 
@@ -980,9 +983,7 @@ function DatasetGrid({
               classes={classes}
               modelName={modelName}
               image={image}
-              excludeCategory={categoryName}
-              dialogLabel={t("reclassifyImageAs")}
-              tooltipLabel={t("reclassifyImage")}
+              onRefresh={onRefresh}
               onCategorize={(newCat) => onReclassify(image, newCat)}
             >
               <BlurredIconButton>
